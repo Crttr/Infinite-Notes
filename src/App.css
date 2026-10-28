@@ -1,0 +1,867 @@
+
+/* Основной рабочий стол */
+.workspace {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+
+  background: linear-gradient(
+    160deg,
+    #252329 0%,
+    #382c39 45%,
+    #793b69 100%
+  );
+}
+
+.react-flow {
+  background: transparent;
+}
+
+/* Оформление заметок */
+.react-flow__node-note {
+  border-radius: 22px;
+}
+
+.note-card {
+  width: 260px;
+  min-height: 150px;
+  overflow: hidden;
+
+  background: #554455;
+  color: #ffffff;
+
+  border: 1px solid #a476b6;
+  border-radius: 22px;
+
+  box-shadow: 0 8px 24px #0003;
+}
+
+.note-selected {
+  border-color: #dba6f0;
+  box-shadow: 0 0 0 2px #b783cc;
+}
+
+.note-title {
+  padding: 16px;
+  background: #67516a;
+  border-bottom: 1px solid #86658e;
+
+  font-size: 17px;
+  font-weight: bold;
+
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.note-arrow {
+  font-size: 13px;
+  color: #e3c8eb;
+}
+
+.note-content {
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #f1e6f3;
+}
+
+/* Кнопки в левом нижнем углу */
+.toolbar {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  z-index: 10;
+
+  display: flex;
+  gap: 12px;
+}
+
+.toolbar button {
+  width: 48px;
+  height: 48px;
+
+  border: 2px solid #70516f;
+  border-radius: 50%;
+
+  background: #493749;
+  color: white;
+
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  background: #805a82;
+}
+
+/* Меню правой кнопки мыши */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+
+  width: 180px;
+  padding: 6px;
+
+  background: #302831;
+  border: 1px solid #805a82;
+  border-radius: 12px;
+
+  box-shadow: 0 8px 24px #0008;
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+
+  padding: 12px;
+  text-align: left;
+
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: #554455;
+}
+
+.context-menu .delete-action {
+  color: #ff9eae;
+}
+
+/* Затемнение за окном редактирования */
+.editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  background: #0009;
+}
+
+/* Окно редактирования */
+.editor-window {
+  width: min(480px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  padding: 24px;
+  border: 1px solid #a476b6;
+  border-radius: 20px;
+
+  background: #382e3b;
+  color: white;
+
+  box-shadow: 0 20px 60px #0008;
+}
+
+.editor-window h2 {
+  margin: 0 0 10px;
+  font-size: 21px;
+}
+
+.editor-window label {
+  color: #d9b7e5;
+  font-size: 14px;
+}
+
+.editor-window input,
+.editor-window textarea {
+  width: 100%;
+  padding: 12px;
+
+  background: #251f28;
+  color: white;
+
+  border: 1px solid #805a82;
+  border-radius: 10px;
+
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.editor-window textarea {
+  resize: vertical;
+  min-height: 160px;
+}
+
+.editor-window input:focus,
+.editor-window textarea:focus {
+  outline: 2px solid #b47bc4;
+}
+
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.editor-actions button {
+  padding: 11px 18px;
+  border: none;
+  border-radius: 9px;
+
+  color: white;
+  cursor: pointer;
+}
+
+.cancel-button {
+  background: #655568;
+}
+
+.save-button {
+  background: #9865a6;
+}
+
+.save-button:hover {
+  background: #b47bc4;
+}
+
+/* Режим создания связей */
+.link-banner {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  padding: 12px 18px;
+
+  background: #493749;
+  color: #ffffff;
+
+  border: 1px solid #a476b6;
+  border-radius: 12px;
+
+  box-shadow: 0 8px 24px #0005;
+  font-size: 14px;
+}
+
+.link-banner button {
+  padding: 8px 12px;
+
+  background: #805a82;
+  color: white;
+
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.link-banner button:hover {
+  background: #a476b6;
+}
+
+/* Удобнее нажимать на линии */
+.react-flow__edge-interaction {
+  stroke-width: 20px;
+}
+
+.react-flow__handle.note-handle {
+  width: 11px;
+  height: 11px;
+  background: #c48bdf;
+  border: 2px solid #f7e9fc;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: all;
+}
+.react-flow__node:hover .react-flow__handle.note-handle,
+.react-flow__node.selected .react-flow__handle.note-handle,
+.react-flow__handle.note-handle.connectingfrom,
+.react-flow__handle.note-handle.connectingto {
+  opacity: 1;
+}
+.react-flow__handle.note-handle:hover {
+  opacity: 1;
+  background: #e3a8f5;
+}
+
+
+/* =====================================
+   ЭТАП 6.1 — ИНТЕРАКТИВНЫЕ СВЯЗИ
+   ===================================== */
+
+/* Точки подключения скрыты по умолчанию */
+.note-card .react-flow__handle {
+  opacity: 0;
+  transition:
+    opacity 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+/* При наведении на заметку точки появляются */
+.react-flow__node:hover .react-flow__handle {
+  opacity: 1;
+}
+
+/* Точки остаются видимыми во время создания связи */
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  opacity: 1;
+}
+
+/* Подсветка точки при наведении */
+.react-flow__handle:hover {
+  opacity: 1;
+  box-shadow: 0 0 10px #c48bdf;
+  transform: scale(1.25);
+}
+
+/* Плавное изменение внешнего вида линий */
+.react-flow__edge-path {
+  transition:
+    stroke 0.2s ease,
+    stroke-width 0.2s ease,
+    opacity 0.2s ease;
+}
+
+/* Подсветка выбранной линии */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #e3b5ff !important;
+  stroke-width: 3.5px !important;
+  filter: drop-shadow(0 0 5px #c48bdf);
+}
+
+/* Приглушение невыбранных линий */
+.react-flow:has(.react-flow__edge.selected)
+.react-flow__edge:not(.selected)
+.react-flow__edge-path {
+  opacity: 0.35;
+}
+
+/* Выделенная заметка */
+.react-flow__node.selected .note-card {
+  border-color: #e3b5ff;
+  box-shadow:
+    0 0 0 2px #b783cc,
+    0 0 20px #b783cc44;
+}
+
+
+/* Этап 7 — сворачивание заметок */
+.note-card.note-collapsed {
+  min-height: 0;
+}
+
+.note-collapse-button {
+  border: 0;
+  background: transparent;
+  color: #e3c8eb;
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.note-collapse-button:hover {
+  color: #ffffff;
+}
+
+/* Этап 8 — панель навигации по связанным заметкам */
+.navigation-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 31;
+  border: 1px solid #a476b6;
+  border-radius: 10px;
+  background: #493749;
+  color: white;
+  padding: 10px 13px;
+  cursor: pointer;
+}
+.navigation-panel {
+  position: absolute;
+  top: 66px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  width: min(320px, calc(100vw - 36px));
+  overflow-y: auto;
+  padding: 18px;
+  border: 1px solid #805a82;
+  border-radius: 16px;
+  background: #302831f5;
+  color: #fff;
+  box-shadow: 0 12px 30px #0006;
+}
+.navigation-panel h2 { margin: 0 0 18px; font-size: 18px; }
+.navigation-panel h3 { margin: 22px 0 10px; font-size: 14px; color: #d9b7e5; }
+.navigation-current { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: #554455; overflow-wrap: anywhere; }
+.navigation-current span { font-size: 12px; color: #e3c8eb; }
+.navigation-empty { font-size: 13px; line-height: 1.5; color: #d3bbd9; }
+.navigation-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; margin: 7px 0; padding: 12px; text-align: left; color: white; background: #493749; border: 1px solid transparent; border-radius: 9px; cursor: pointer; }
+.navigation-item span:first-child { overflow-wrap: anywhere; }
+.navigation-item:hover, .navigation-item:focus-visible { background: #67516a; border-color: #a476b6; }
+
+/* Этап 9 — локальный поиск по заметкам */
+.search-toggle {
+  position: absolute;
+  top: 18px;
+  left: 88px;
+  z-index: 32;
+  border: 1px solid #a476b6;
+  border-radius: 10px;
+  background: #493749;
+  color: #fff;
+  padding: 10px 13px;
+  cursor: pointer;
+}
+.search-toggle:hover { background: #67516a; }
+.search-panel {
+  position: absolute;
+  top: 66px;
+  left: 18px;
+  z-index: 31;
+  width: min(340px, calc(100vw - 36px));
+  max-height: min(70vh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid #805a82;
+  border-radius: 16px;
+  background: #302831f5;
+  color: #fff;
+  box-shadow: 0 12px 30px #0006;
+}
+.search-panel label { font-size: 17px; font-weight: 700; }
+.search-panel input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 1px solid #9975a2;
+  border-radius: 9px;
+  background: #493749;
+  color: #fff;
+  font: inherit;
+}
+.search-panel input:focus { outline: 2px solid #c48bdf; outline-offset: 1px; }
+.search-status { margin: 2px 0; color: #dbc5e2; font-size: 13px; }
+.search-results { overflow-y: auto; min-height: 0; }
+.search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  margin: 6px 0;
+  padding: 12px;
+  text-align: left;
+  color: #fff;
+  background: #493749;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.search-result strong, .search-result span { overflow-wrap: anywhere; }
+.search-result span { color: #dcc8e3; font-size: 12px; white-space: pre-wrap; }
+.search-result:hover, .search-result:focus-visible, .search-result-active {
+  background: #67516a;
+  border-color: #c48bdf;
+}
+.react-flow__node.note-search-highlight .note-card {
+  border-color: #f4c6ff;
+  box-shadow: 0 0 0 3px #e3b5ff, 0 0 24px #c48bdf99;
+}
+
+/* Этап 10 — индивидуальные настройки связей */
+.line-editor-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: #0009; }
+.line-editor { display: flex; flex-direction: column; gap: 13px; width: min(370px, 92vw); padding: 24px; border: 1px solid #a476b6; border-radius: 18px; background: #3e3047; color: #fff; box-shadow: 0 16px 50px #0008; }
+.line-editor h2 { margin: 0 0 6px; font-size: 20px; }
+.line-editor label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.line-editor select { padding: 9px; background: #55445e; color: white; border: 1px solid #92709e; border-radius: 8px; }
+.line-editor input[type=color] { width: 80px; height: 36px; cursor: pointer; }
+.line-editor input[type=range] { accent-color: #c48bdf; }
+.line-editor .line-editor-check { flex-direction: row; align-items: center; }
+.line-editor button { padding: 10px; border: 1px solid #92709e; border-radius: 9px; background: #60496c; color: white; cursor: pointer; }
+.line-editor button:hover { background: #775783; }
+
+/* Этап 11 — общие темы. Значения исходной темы совпадают с этапом 10. */
+.workspace {
+  --workspace-gradient: linear-gradient(160deg,#252329 0%,#382c39 45%,#793b69 100%);
+  --grid-dot: #70516f;
+  --note-bg: #554455; --note-header: #67516a; --note-border: #a476b6;
+  --text-main: #ffffff; --text-muted: #e3c8eb; --note-content: #f1e6f3;
+  --panel-bg: #302831f5; --dialog-bg: #382e3b; --control-bg: #493749;
+  --control-hover: #67516a; --field-bg: #251f28; --accent: #c48bdf;
+  --border-color: #805a82; --focus-color: #dba6f0;
+  background: var(--workspace-gradient);
+}
+.workspace[data-theme="midnight"] {
+  --workspace-gradient: linear-gradient(160deg,#161c2d,#283754 50%,#485b80);
+  --grid-dot:#516786; --note-bg:#37445f; --note-header:#475978; --note-border:#849dc6;
+  --text-main:#f4f7ff; --text-muted:#d1ddfa; --note-content:#edf2ff;
+  --panel-bg:#202c43f5; --dialog-bg:#283750; --control-bg:#364762; --control-hover:#4a6183;
+  --field-bg:#19263b; --accent:#a5b9ef; --border-color:#758db6; --focus-color:#b5c8ff;
+}
+.workspace[data-theme="forest"] {
+  --workspace-gradient:linear-gradient(160deg,#182925,#294d42 50%,#447762);
+  --grid-dot:#527a6a; --note-bg:#36594e; --note-header:#477365; --note-border:#84b8a1;
+  --text-main:#f4fff8; --text-muted:#c8edda; --note-content:#e6f8ed;
+  --panel-bg:#1d3930f5; --dialog-bg:#284b3e; --control-bg:#355c4d; --control-hover:#4b7965;
+  --field-bg:#19382e; --accent:#9cddbe; --border-color:#73a78e; --focus-color:#b5f3d0;
+}
+.workspace[data-theme="sunset"] {
+  --workspace-gradient:linear-gradient(160deg,#30242d,#62404a 50%,#a36d5a);
+  --grid-dot:#956b71; --note-bg:#76535c; --note-header:#936775; --note-border:#d49a9c;
+  --text-main:#fff7f3; --text-muted:#f7d1c7; --note-content:#fff0e9;
+  --panel-bg:#402c35f5; --dialog-bg:#593b46; --control-bg:#77505b; --control-hover:#956876;
+  --field-bg:#39272f; --accent:#f0b6a0; --border-color:#bd8790; --focus-color:#ffd1b7;
+}
+.workspace[data-theme="light"] {
+  --workspace-gradient:linear-gradient(160deg,#f5f1f9,#e6deee 50%,#d4c3e5);
+  --grid-dot:#b8a6c6; --note-bg:#fffaff; --note-header:#e6d9ed; --note-border:#b69ac8;
+  --text-main:#30243c; --text-muted:#604b70; --note-content:#40334c;
+  --panel-bg:#f7f1fbf5; --dialog-bg:#f7f2fb; --control-bg:#e9dcf1; --control-hover:#d8c4e6;
+  --field-bg:#ffffff; --accent:#8061a2; --border-color:#aa8cbd; --focus-color:#755199;
+}
+.workspace[data-theme="graphite"] {
+  --workspace-gradient:linear-gradient(160deg,#1b1d21,#2e3137 50%,#4a4e58);
+  --grid-dot:#626773; --note-bg:#42464f; --note-header:#565b65; --note-border:#858b97;
+  --text-main:#f8f9fc; --text-muted:#d5d9e1; --note-content:#edf0f5;
+  --panel-bg:#282b31f5; --dialog-bg:#353941; --control-bg:#494d56; --control-hover:#606672;
+  --field-bg:#24272c; --accent:#b5bac8; --border-color:#7f8592; --focus-color:#d5d9e3;
+}
+.workspace .note-card { background:var(--note-bg);color:var(--text-main);border-color:var(--note-border); }
+.workspace .note-title { background:var(--note-header);border-bottom-color:var(--border-color); }
+.workspace .note-content {color:var(--note-content)}
+.workspace .note-collapse-button,.workspace .note-arrow {color:var(--text-muted)}
+.workspace .navigation-panel,.workspace .search-panel,.workspace .context-menu {background:var(--panel-bg);color:var(--text-main);border-color:var(--border-color)}
+.workspace .navigation-current,.workspace .navigation-item,.workspace .search-result {background:var(--control-bg);color:var(--text-main)}
+.workspace .navigation-item:hover,.workspace .search-result:hover,.workspace .search-result-active,.workspace .context-menu button:hover {background:var(--control-hover)}
+.workspace .navigation-current span,.workspace .navigation-panel h3,.workspace .navigation-empty,.workspace .search-status,.workspace .search-result span {color:var(--text-muted)}
+.workspace .search-toggle,.workspace .navigation-toggle,.workspace .settings-toggle,.workspace .toolbar button {background:var(--control-bg);color:var(--text-main);border-color:var(--border-color)}
+.workspace .search-toggle:hover,.workspace .navigation-toggle:hover,.workspace .settings-toggle:hover,.workspace .toolbar button:hover {background:var(--control-hover)}
+.workspace .editor-window {background:var(--dialog-bg);color:var(--text-main);border-color:var(--border-color)}
+.workspace .editor-window label {color:var(--text-muted)}
+.workspace .editor-window input,.workspace .editor-window textarea,.workspace .search-panel input {background:var(--field-bg);color:var(--text-main);border-color:var(--border-color)}
+.workspace .link-banner {background:var(--panel-bg);color:var(--text-main);border-color:var(--border-color)}
+.workspace .context-menu button {color:var(--text-main)}
+.workspace .context-menu .delete-action {color:#e8758c}
+.workspace .react-flow__handle.note-handle {background:var(--accent)!important;border-color:var(--text-main)!important}
+.workspace .react-flow__node.selected .note-card {border-color:var(--focus-color)}
+.settings-toggle {position:absolute;top:18px;left:195px;z-index:32;border:1px solid;border-radius:10px;padding:10px 13px;cursor:pointer}
+.settings-overlay {position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:#0009}
+.settings-dialog {width:min(580px,100%);max-height:90vh;overflow-y:auto;border:1px solid var(--border-color);border-radius:18px;background:var(--dialog-bg);color:var(--text-main);box-shadow:0 16px 50px #0008;padding:22px}
+.settings-header {display:flex;align-items:center;justify-content:space-between;gap:10px}
+.settings-header h2 {margin:0;font-size:21px}
+.settings-header button {border:0;background:transparent;color:var(--text-main);font-size:20px;cursor:pointer}
+.settings-tabs {display:flex;gap:8px;margin:18px 0}
+.settings-tabs button {flex:1;border:1px solid var(--border-color);border-radius:9px;background:var(--control-bg);color:var(--text-main);padding:10px;cursor:pointer}
+.settings-tabs button.active {outline:2px solid var(--accent);background:var(--control-hover)}
+.settings-section h3 {margin:0 0 8px}
+.settings-section p {font-size:13px;line-height:1.5;color:var(--text-muted)}
+.theme-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:15px 0}
+.theme-choice {display:flex;flex-direction:column;gap:5px;text-align:left;padding:8px;border:1px solid var(--border-color);border-radius:12px;background:var(--control-bg);color:var(--text-main);cursor:pointer}
+.theme-choice.active {outline:2px solid var(--accent)}
+.theme-choice small {color:var(--text-muted)}
+.theme-preview {height:65px;border-radius:8px;display:flex;align-items:center;padding:14px}
+.theme-preview span {display:block;width:55%;height:18px;border-radius:5px;opacity:.85}
+.settings-fields {display:flex;flex-direction:column;gap:14px;margin-top:15px}
+.settings-fields label {display:flex;flex-direction:column;gap:7px;font-size:14px}
+.settings-fields select {padding:10px;border:1px solid var(--border-color);border-radius:9px;background:var(--control-bg);color:var(--text-main)}
+.settings-fields input[type=color] {width:85px;height:37px;cursor:pointer}
+.settings-fields input[type=range] {accent-color:var(--accent)}
+.settings-fields .settings-checkbox {flex-direction:row;align-items:center}
+.settings-line-preview {border:1px solid var(--border-color);border-radius:10px;background:var(--field-bg);padding:8px}
+.settings-line-preview svg {display:block;width:100%;height:60px}
+.settings-reset {padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--control-bg);color:var(--text-main);cursor:pointer}
+.settings-reset:hover {background:var(--control-hover)}
+@media(max-width:480px){.settings-toggle{left:170px}.theme-grid{grid-template-columns:1fr}}
+
+
+/* Этап 11.1 — выделение заметок и связей следует выбранной теме. */
+.workspace .react-flow__node.selected .note-card,
+.workspace .note-card.note-selected {
+  border-color: var(--focus-color);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 20px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.workspace .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--focus-color) !important;
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+
+.workspace .react-flow__handle:hover {
+  box-shadow: 0 0 10px var(--accent);
+}
+
+/* Stage 12: formatting toolbar and rich text */
+.rich-editor { width:100%; }
+.rich-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.rich-toolbar button, .rich-toolbar label { border:1px solid var(--border-color,#805a82); border-radius:7px; padding:6px 9px; background:var(--field-bg,#251f28); color:var(--text-main,#fff); font:inherit; font-size:13px; cursor:pointer; }
+.rich-toolbar label { display:inline-flex; gap:6px; align-items:center; }
+.rich-toolbar input[type=color] { width:25px; height:23px; padding:0; border:0; cursor:pointer; }
+.rich-editor-area { min-height:170px; max-height:40vh; overflow:auto; padding:12px; border:1px solid var(--border-color,#805a82); border-radius:10px; background:var(--field-bg,#251f28); color:var(--text-main,#fff); white-space:pre-wrap; overflow-wrap:anywhere; outline:none; line-height:1.55; }
+.rich-editor-area:focus { outline:2px solid var(--accent,#b47bc4); }
+.rich-editor-area:empty:before { content:attr(data-placeholder); opacity:.55; pointer-events:none; }
+.rich-text-view { white-space:pre-wrap; overflow-wrap:anywhere; }
+.rich-text-view ul,.rich-text-view ol,.rich-editor-area ul,.rich-editor-area ol { padding-left:22px; margin:6px 0; }
+
+/* Stage 12.1: visible active formatting controls */
+.rich-toolbar button.rich-tool-active,
+.rich-toolbar button[aria-pressed="true"] {
+  background: var(--accent, #a476b6);
+  border-color: var(--focus-color, #e3b5ff);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--focus-color, #e3b5ff);
+}
+
+/* Tiptap owns the editable child; the existing container retains the theme. */
+.rich-editor-area .tiptap { min-height:145px; outline:none; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rich-editor-area .tiptap p { margin:0 0 .4em; }
+.rich-editor-area .tiptap ul,.rich-editor-area .tiptap ol { padding-left:22px; margin:6px 0; }
+
+/* Stage 13.3, delta 1: nested list visibility. The list remains in saved HTML. */
+.rich-editor-area li[data-collapsed="true"] > ul,
+.rich-editor-area li[data-collapsed="true"] > ol,
+.rich-text-view li[data-collapsed="true"] > ul,
+.rich-text-view li[data-collapsed="true"] > ol { display: none; }
+.rich-editor-area li[data-collapsed="true"] > p:first-child::after,
+.rich-text-view li[data-collapsed="true"] > p:first-child::after { content: "  ▸"; color: var(--accent, #b47bc4); }
+
+/* Stage 13.3 delta 2: in-place collapse arrows for parent list items. */
+.rich-editor-area li:has(> ul) > p:first-child,
+.rich-editor-area li:has(> ol) > p:first-child,
+.rich-text-view li:has(> ul) > p:first-child,
+.rich-text-view li:has(> ol) > p:first-child {
+  position: relative;
+  padding-left: 20px;
+}
+.rich-editor-area li:has(> ul) > p:first-child::before,
+.rich-editor-area li:has(> ol) > p:first-child::before,
+.rich-text-view li:has(> ul) > p:first-child::before,
+.rich-text-view li:has(> ol) > p:first-child::before {
+  content: '▾';
+  position: absolute;
+  left: 1px;
+  top: 0;
+  color: var(--accent, #b47bc4);
+  font-weight: 700;
+}
+.rich-editor-area li[data-collapsed="true"]:has(> ul) > p:first-child::before,
+.rich-editor-area li[data-collapsed="true"]:has(> ol) > p:first-child::before,
+.rich-text-view li[data-collapsed="true"]:has(> ul) > p:first-child::before,
+.rich-text-view li[data-collapsed="true"]:has(> ol) > p:first-child::before { content: '▸'; }
+.rich-editor-area li:has(> ul) > p:first-child,
+.rich-editor-area li:has(> ol) > p:first-child { cursor: text; }
+.rich-editor-area li[data-collapsed="true"] > p:first-child::after,
+.rich-text-view li[data-collapsed="true"] > p:first-child::after { content: none; }
+
+/* Stage 13.4: optional full toolbar and floating selection toolbar */
+.rich-editor { position: relative; }
+.rich-toolbar-toggle-row { display: flex; justify-content: flex-end; margin: 4px 0; }
+.rich-toolbar-toggle { border: 1px solid var(--border-color,#805a82); border-radius: 7px; padding: 5px 9px; background: var(--field-bg,#251f28); color: var(--text-main,#fff); cursor: pointer; font: inherit; font-size: 12px; }
+.rich-floating-toolbar { position: absolute; z-index: 40; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid var(--border-color,#805a82); border-radius: 9px; background: var(--field-bg,#251f28); box-shadow: 0 6px 22px #0008; white-space: nowrap; }
+.rich-floating-toolbar button, .rich-floating-toolbar label { display: inline-flex; align-items: center; gap: 3px; padding: 5px 7px; border: 1px solid var(--border-color,#805a82); border-radius: 6px; background: transparent; color: var(--text-main,#fff); font: inherit; font-size: 13px; cursor: pointer; }
+.rich-floating-toolbar input[type=color] { width: 19px; height: 19px; padding: 0; border: 0; cursor: pointer; }
+.rich-floating-toolbar button.rich-tool-active { background: var(--accent,#a476b6); color: #fff; }
+
+/* Stage 13.5 delta 3 — theme-aware point links */
+.item-link-picker,.item-link-existing {margin-top:14px;padding:14px;border:1px solid var(--border-color,var(--accent,#a476b6));border-radius:12px;background:var(--dialog-bg,#302638);color:var(--text-main,#fff)}
+.item-link-picker-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.item-link-picker-heading button,.item-link-existing-row button {border:1px solid var(--border-color,#765a82);border-radius:7px;background:var(--field-bg,#241d2a);color:var(--text-main,#fff);cursor:pointer;padding:3px 10px}
+.item-link-picker p {font-size:13px;color:var(--text-muted,#d6bddf)}
+.item-link-picker input {display:block;width:100%;box-sizing:border-box;margin:10px 0;background:var(--field-bg,#241d2a);color:var(--text-main,#fff);border:1px solid var(--border-color,#765a82);border-radius:8px;padding:10px}
+.item-link-results {max-height:195px;overflow-y:auto;display:grid;gap:6px}
+.item-link-result {width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px 12px;border:1px solid var(--border-color,#765a82);border-radius:8px;background:var(--field-bg,#44344c);color:var(--text-main,#fff);cursor:pointer}
+.item-link-result:hover:not(:disabled) {border-color:var(--accent,#a476b6);box-shadow:0 0 0 1px var(--accent,#a476b6)}
+.item-link-result:disabled {opacity:.55;cursor:default}
+.item-link-cancel {margin-top:10px;padding:8px 12px;border:1px solid var(--border-color,#765a82);border-radius:8px;background:transparent;color:var(--text-main,#fff);cursor:pointer}
+.item-link-existing {display:grid;gap:9px}
+.item-link-existing-row {display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;overflow-wrap:anywhere}
+.item-link-feedback {font-size:13px;color:var(--accent,#c48bdf)}
+.item-link-badge {display:inline-flex;margin-left:7px;padding:1px 4px;border:1px solid var(--accent,#c48bdf);border-radius:6px;background:transparent;color:var(--accent,#c48bdf);font-size:11px;cursor:pointer;vertical-align:middle}
+.item-link-badge:hover {background:var(--accent,#c48bdf);color:#fff}
+
+/* Stage 13.6: compact link picker inside a note card */
+.rich-text-linked-container { position: relative; }
+.item-link-popover { position: relative; z-index: 12; margin-top: 8px; padding: 9px; border-radius: 10px; border: 1px solid var(--note-border, #a476b6); background: var(--note-bg, #302638); color: var(--text-main, #fff); box-shadow: 0 6px 18px #0005; }
+.item-link-popover-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 6px; }
+.item-link-popover-title button { background: transparent; border: 0; color: inherit; cursor: pointer; }
+.item-link-popover-entry { display: block; width: 100%; text-align: left; padding: 7px; margin-top: 4px; border-radius: 6px; border: 1px solid var(--note-border, #a476b6); background: transparent; color: inherit; cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.item-link-popover-entry:hover { background: #ffffff1a; }
+
+/* Stage 14 — local images and galleries */
+.rich-text-view img[data-image-id],.rich-editor-area img[data-image-id] { display:block;max-width:100%;height:auto;border-radius:9px;margin:9px 0;cursor:zoom-in; }
+.rich-editor-area img.ProseMirror-selectednode {outline:2px solid var(--accent,#b788da);}
+.gallery-editor {display:grid;gap:12px;margin:12px 0;}
+.gallery-add {display:inline-flex;align-items:center;gap:8px;justify-content:center;cursor:pointer;border:1px solid var(--border-color,#805a82);border-radius:9px;background:var(--field-bg,#32263c);padding:12px;color:var(--text-main,#fff)}
+.gallery-add input {max-width:220px;font-size:12px;}
+.image-gallery {display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:10px;margin-top:8px;}
+.gallery-photo {min-width:0;border:1px solid var(--note-border,#805a82);border-radius:9px;padding:5px;background:#0002;}
+.gallery-photo-open {display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in;}
+.gallery-photo-open img {display:block;width:100%;height:120px;object-fit:cover;border-radius:6px;}
+.gallery-photo p {margin:6px 2px;font-size:12px;overflow-wrap:anywhere;}
+.gallery-photo input {width:100%;box-sizing:border-box;margin:6px 0;padding:7px;background:var(--field-bg,#32263c);border:1px solid var(--border-color,#805a82);border-radius:6px;color:var(--text-main,#fff);}
+.gallery-remove {background:transparent;border:1px solid var(--border-color,#805a82);border-radius:6px;color:inherit;cursor:pointer;padding:5px 8px;}
+.gallery-empty,.gallery-photo-missing {padding:16px;font-size:12px;opacity:.7;}
+.image-error {color:#ffb7b7;font-size:13px;}
+.gallery-lightbox {position:fixed;inset:0;z-index:99999;background:#09070cf2;display:flex;align-items:center;justify-content:center;padding:60px 20px 20px;cursor:zoom-out;}
+.gallery-lightbox img {max-width:95vw;max-height:85vh;object-fit:contain;border-radius:6px;}
+.gallery-lightbox-close {position:absolute;right:24px;top:16px;color:white;background:#42324e;border:1px solid #b788da;border-radius:8px;padding:8px 12px;cursor:pointer;}
+
+/* Stage 14 — Wide Editor: layout only; rich editor and gallery logic unchanged. */
+.workspace .editor-overlay, .editor-overlay {
+  padding: clamp(12px, 2.5vh, 30px);
+  box-sizing: border-box;
+  backdrop-filter: blur(6px);
+}
+.workspace .editor-window.editor-window-wide, .editor-window.editor-window-wide {
+  width: min(960px, 96vw);
+  max-width: 96vw;
+  height: min(820px, 90dvh);
+  max-height: 94dvh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  box-sizing: border-box;
+  transition: width .18s ease, height .18s ease;
+}
+.workspace .editor-window.editor-window-fullscreen, .editor-window.editor-window-fullscreen {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 14px;
+}
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 26px 18px;
+  border-bottom: 1px solid var(--border-color, #805a82);
+  flex-shrink: 0;
+}
+.editor-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.editor-heading-icon { font-size: 23px; color: var(--accent, #b47bc4); }
+.editor-window .editor-heading h2 { margin: 0; font-size: 20px; }
+.editor-heading-subtitle { display: block; margin-top: 3px; font-size: 12px; color: var(--text-muted, #c9b0d0); }
+.editor-window .editor-expand-button {
+  flex-shrink: 0; width: auto; padding: 9px 12px;
+  border: 1px solid var(--border-color, #805a82);
+  border-radius: 9px; color: var(--text-main, #fff);
+  background: var(--field-bg, #251f28); cursor: pointer;
+}
+.editor-window .editor-expand-button:hover { border-color: var(--accent, #b47bc4); }
+.editor-scroll-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 28px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-gutter: stable;
+}
+.editor-field-heading { display: flex; align-items: center; justify-content: space-between; }
+.editor-window .editor-field-heading label { font-size: 13px; font-weight: 600; }
+.editor-window .editor-scroll-area > input#note-title {
+  font-size: 17px; font-weight: 600; padding: 13px 15px;
+  box-sizing: border-box;
+}
+.editor-window .rich-editor { min-width: 0; }
+.editor-window .rich-toolbar { gap: 6px; padding: 10px; border-radius: 11px; }
+.editor-window .rich-editor-area {
+  min-height: 300px;
+  max-height: none;
+  overflow: visible;
+  padding: 18px 20px;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+.editor-window .rich-editor-area .tiptap { min-height: 260px; }
+.editor-window .rich-editor-area img[data-image-id] { max-width: 100%; object-fit: contain; }
+.editor-window .gallery-editor { min-width: 0; }
+.editor-window .editor-actions {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 16px 26px;
+  border-top: 1px solid var(--border-color, #805a82);
+  align-items: center;
+  background: var(--dialog-bg, #382e3b);
+}
+.editor-footer-hint { margin-right: auto; font-size: 12px; color: var(--text-muted, #c9b0d0); }
+.editor-window .editor-actions button { min-width: 108px; }
+@media (max-width: 620px) {
+  .workspace .editor-overlay, .editor-overlay { padding: 8px; }
+  .workspace .editor-window.editor-window-wide, .editor-window.editor-window-wide { width: 100%; max-width: 100%; height: 96dvh; max-height: 96dvh; }
+  .editor-header { padding: 14px; }
+  .editor-heading-subtitle, .editor-footer-hint { display: none; }
+  .editor-window .editor-heading h2 { font-size: 17px; }
+  .editor-window .editor-expand-button { padding: 8px; font-size: 12px; }
+  .editor-scroll-area { padding: 14px; }
+  .editor-window .rich-editor-area { padding: 12px; }
+  .editor-window .editor-actions { padding: 12px 14px; }
+}
+
+/* Stage 15: project backup and restore */
+.backup-section { display: flex; flex-direction: column; gap: 14px; }
+.backup-section h3, .backup-section h4 { margin: 0; }
+.backup-section p { line-height: 1.5; }
+.backup-panel { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 17px; border: 1px solid var(--border-color, #805a82); border-radius: 12px; background: var(--field-bg, rgba(15,12,22,.22)); width: 100%; box-sizing: border-box; }
+.backup-panel p { margin: 0; opacity: .85; }
+.backup-panel input[type=file] { width: 100%; max-width: 100%; font: inherit; }
+.backup-section .backup-primary, .backup-section .backup-restore { background: var(--accent, #a66fb9); border: 0; border-radius: 9px; padding: 11px 16px; cursor: pointer; color: #fff; font: inherit; }
+.backup-section button:disabled { opacity: .55; cursor: not-allowed; }
+.backup-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; width: 100%; padding: 12px; box-sizing: border-box; border-radius: 9px; background: rgba(130,100,150,.14); }
+.backup-message { padding: 10px 12px; border-radius: 9px; background: rgba(130,100,150,.18); overflow-wrap: anywhere; }
+.backup-note { font-size: 12px; opacity: .8; }
+
+/* Stage 16 — help dialog; colors inherit the selected theme. */
+.help-toggle {position:absolute;top:18px;left:330px;z-index:32;border:1px solid var(--border-color);border-radius:10px;padding:10px 13px;background:var(--control-bg);color:var(--text-main);cursor:pointer}
+.help-toggle:hover {background:var(--control-hover)}
+.help-overlay {position:fixed;inset:0;z-index:150;display:flex;align-items:center;justify-content:center;padding:20px;background:#000a;backdrop-filter:blur(5px);box-sizing:border-box}
+.help-dialog {width:min(920px,100%);height:min(720px,90dvh);display:flex;flex-direction:column;min-height:0;overflow:hidden;border:1px solid var(--border-color);border-radius:18px;background:var(--dialog-bg);color:var(--text-main);box-shadow:0 20px 60px #0008}
+.help-header {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:23px 28px;border-bottom:1px solid var(--border-color)}
+.help-eyebrow {font-size:10px;letter-spacing:.13em;color:var(--text-muted)}
+.help-header h2 {margin:5px 0 0;font-size:23px}
+.help-close {background:transparent;border:0;color:var(--text-main);font-size:22px;cursor:pointer;padding:8px}
+.help-body {display:grid;grid-template-columns:210px minmax(0,1fr);flex:1;min-height:0}
+.help-nav {display:flex;flex-direction:column;gap:5px;padding:18px 12px;border-right:1px solid var(--border-color);overflow-y:auto}
+.help-nav button {background:transparent;border:1px solid transparent;border-radius:9px;text-align:left;padding:11px 13px;color:var(--text-main);cursor:pointer}
+.help-nav button:hover {background:var(--control-hover)}
+.help-nav button.active {background:var(--control-bg);border-color:var(--border-color);font-weight:700}
+.help-content {overflow-y:auto;padding:26px 34px 38px;line-height:1.7}
+.help-content h3 {font-size:22px;margin:0 0 14px}
+.help-content p {margin:0 0 14px}
+.help-content li {margin-bottom:9px}
+.help-content ul,.help-content ol {padding-left:23px}
+.help-tip {border-left:3px solid var(--accent);padding:11px 14px;background:var(--control-bg);border-radius:0 8px 8px 0}
+.help-shortcuts {display:grid;grid-template-columns:max-content 1fr;gap:12px 20px;align-items:center;margin:20px 0}
+.help-shortcuts span:nth-child(odd) {font-weight:700;border:1px solid var(--border-color);padding:5px 8px;border-radius:6px;background:var(--control-bg)}
+@media(max-width:720px) {.help-toggle {left:auto;right:12px;top:66px}.help-dialog {height:94dvh}.help-body {display:flex;flex-direction:column}.help-nav {flex-direction:row;flex-wrap:nowrap;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border-color);padding:9px}.help-nav button {flex-shrink:0}.help-content {padding:20px}.help-header {padding:16px}.help-header h2 {font-size:19px}}
+
+/* Расположение верхних кнопок Infinite Notes */
+.settings-toggle {
+  left: 225px;
+}
+
+.help-toggle {
+  left: 365px;
+}

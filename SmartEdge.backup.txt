@@ -1,0 +1,86 @@
+
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
+  useInternalNode,
+  type EdgeProps,
+} from '@xyflow/react'
+
+// Умная линия между заметками
+export function SmartEdge(props: EdgeProps) {
+  const {
+    id,
+    source,
+    target,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    markerEnd,
+    style,
+    selected,
+  } = props
+
+  // Получаем информацию о заметках
+  const sourceNode = useInternalNode(source)
+  const targetNode = useInternalNode(target)
+
+  // Расстояние между точками
+  const distance = Math.hypot(
+    targetX - sourceX,
+    targetY - sourceY
+  )
+
+  // Кривизна зависит от расстояния
+  const curvature = Math.max(
+    0.15,
+    Math.min(0.4, distance / 900)
+  )
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    curvature,
+  })
+
+  // На следующих шагах используем данные заметок
+  void sourceNode
+  void targetNode
+
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          ...style,
+          strokeWidth: selected ? 3.5 : 2.5,
+        }}
+      />
+
+      {selected && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: 'none',
+              color: '#e3b5ff',
+              fontSize: 12,
+            }}
+          >
+            ●
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}

@@ -1,0 +1,30 @@
+# Tauri / Rust build outputs
+/src-tauri/target/
+/src-tauri/gen/schemas/
+# Node.js
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editor and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Backups and release archives
+*.zip
+*.7z
+*.rar
+
+# Local secrets
+*.pem
+*.key

@@ -1,0 +1,20 @@
+Infinite Notes — Tauri 2, первый шаг этапа 17
+
+1. Сделайте резервную копию проекта и экспортируйте резервную копию заметок из приложения.
+2. Распакуйте ZIP в корень B:\Programming\notees\InfiniteNotes, с заменой package.json.
+3. Установите Rust через rustup.rs (MSVC toolchain) и Microsoft C++ Build Tools с Desktop development with C++ и Windows SDK.
+4. WebView2 Runtime нужен на компьютерах, где запускается приложение.
+5. Откройте PowerShell в корне проекта:
+   npm.cmd install
+   npm.cmd install -D @tauri-apps/cli@^2
+   npm.cmd run build
+   npm.cmd run tauri:dev
+6. Если приложение открывается, соберите:
+   npm.cmd run tauri:portable
+   npm.cmd run tauri:installer
+7. Файлы:
+   src-tauri\target\release\infinite-notes.exe (самостоятельный EXE, требует WebView2)
+   src-tauri\target\release\bundle\nsis\ (установщик)
+
+ВАЖНО: значок сейчас тестовый. Позже заменим icons/*.
+ПРИМЕЧАНИЕ: сборка Rust/Tauri на Windows здесь не выполнялась. Команда tauri:portable компилирует EXE без установщика. Для офлайн установки на компьютерах без WebView2 может понадобиться отдельная настройка NSIS.

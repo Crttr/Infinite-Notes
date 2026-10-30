@@ -8,6 +8,7 @@ import {
   useEdgesState,
   useReactFlow,
   MarkerType,
+  SelectionMode,
   type Connection,
   type Edge,
   type NodeMouseHandler,
@@ -20,8 +21,9 @@ import './App.css'
 import { SmartEdge } from './SmartEdge'
 import { RichTextEditor } from './RichText'
 import { ImageGallery } from './ImageGallery'
-import { saveImage, type GalleryImage } from './ImageStorage'
-import { exportBackup, inspectBackup, importBackup, downloadBackup, type BackupPreview } from './Backup'
+import { saveImage, clearStoredImages, type GalleryImage } from './ImageStorage'
+import { exportBackup, inspectBackup, importBackup, downloadBackup, type BackupPreview, BACKUP_KEYS } from './Backup'
+import { ACTIVE_PROJECT_KEY, createProject, listProjects, putProject, removeProject, type LocalProject } from './ProjectStore'
 
 type LineShape = 'curve' | 'straight'
 type LinePattern = 'solid' | 'dashed' | 'dotted'
@@ -195,6 +197,7 @@ type ContextMenu =
       x: number
       y: number
     }
+  | { type: 'pane'; x: number; y: number }
   | {
       type: 'edge'
       id: string
@@ -216,6 +219,18 @@ function Workspace() {
     )
 
   const [menu, setMenu] = useState<ContextMenu | null>(null)
+  const [homeOpen, setHomeOpen] = useState(true)
+  const [projectName, setProjectName] = useState(() => localStorage.getItem('infinite-notes-project-name') || 'Моё пространство')
+  const [projects, setProjects] = useState<LocalProject[]>([])
+  const [projectsReady, setProjectsReady] = useState(false)
+  const projectOperationRef = useRef(false)
+  const projectRevisionRef = useRef(0)
+  const [projectBusy, setProjectBusy] = useState(false)
+  const [projectError, setProjectError] = useState('')
+  const projectInputRef = useRef<HTMLInputElement>(null)
+  const [renameTarget, setRenameTarget] = useState<LocalProject | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpSection, setHelpSection] = useState<'start' | 'editor' | 'links' | 'images' | 'backup' | 'controls' | 'about'>('start')
@@ -367,8 +382,8 @@ function Workspace() {
   }, [setNodes])
 
   // Создаём новую заметку
-  const addNote = useCallback(() => {
-    const position = screenToFlowPosition({
+  const addNote = useCallback((at?: { x: number; y: number }) => {
+    const position = screenToFlowPosition(at ?? {
       x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     })
@@ -388,8 +403,8 @@ function Workspace() {
   }, [screenToFlowPosition, setNodes])
 
 
-  const addGallery = useCallback(() => {
-    const position = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+  const addGallery = useCallback((at?: { x: number; y: number }) => {
+    const position = screenToFlowPosition(at ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 })
     setNodes(current => [...current, { id: crypto.randomUUID(), type: 'note', position,
       data: { title: 'Новая галерея', content: '', kind: 'gallery', gallery: [] } }])
   }, [screenToFlowPosition, setNodes])
@@ -741,6 +756,169 @@ function Workspace() {
     })
   }
 
+  // Keep a separate ZIP snapshot for each project; the active canvas uses legacy storage.
+  const refreshProjects = async () => setProjects(await listProjects())
+  useEffect(() => {
+    let alive = true
+    const initialize = async () => {
+      try {
+        const existing = await listProjects()
+        let active = localStorage.getItem(ACTIVE_PROJECT_KEY)
+        if (!existing.length) {
+          // Migration: preserve the existing v0.1/v0.2 canvas as the first project.
+          const first = createProject(localStorage.getItem('infinite-notes-project-name') || 'Моё пространство', await exportBackup())
+          await putProject(first)
+          active = first.id
+          localStorage.setItem(ACTIVE_PROJECT_KEY, active)
+        } else if (!active || !existing.some(project => project.id === active)) {
+          // Never silently overwrite the old canvas with a different project.
+          const recovered = createProject('Восстановленное пространство', await exportBackup())
+          await putProject(recovered)
+          active = recovered.id
+          localStorage.setItem(ACTIVE_PROJECT_KEY, active)
+        }
+        const current = (await listProjects()).find(project => project.id === active)
+        if (current) {
+          localStorage.setItem('infinite-notes-project-name', current.name)
+          if (alive) setProjectName(current.name)
+        }
+        if (alive) { await refreshProjects(); setProjectsReady(true) }
+      } catch (error) { if (alive) setProjectError(`Не удалось открыть каталог проектов: ${String(error)}`) }
+    }
+    void initialize()
+    return () => { alive = false }
+  }, [])
+
+  // A debounced snapshot follows the normal canvas autosave. Switching flushes it explicitly.
+  useEffect(() => {
+    if (!projectsReady || projectOperationRef.current) return
+    const revision = ++projectRevisionRef.current
+    const timer = window.setTimeout(async () => {
+      if (projectOperationRef.current || revision !== projectRevisionRef.current) return
+      try { await persistCurrentProject() }
+      catch (error) { setProjectError(`Автосохранение проекта: ${String(error)}`) }
+    }, 1800)
+    return () => window.clearTimeout(timer)
+  }, [projectsReady, nodes, edges, itemLinks, themeId, defaultLine])
+
+  const persistCurrentProject = async () => {
+    const id = localStorage.getItem(ACTIVE_PROJECT_KEY)
+    if (!id) return
+    const existing = (await listProjects()).find(item => item.id === id)
+    if (!existing) throw new Error('Активный проект отсутствует в каталоге')
+    const blob = await exportBackup()
+    await putProject({ ...existing, name: projectName, updatedAt: new Date().toISOString(), blob })
+    await refreshProjects()
+  }
+  const withProjectOperation = async (task: () => Promise<void>) => {
+    if (projectOperationRef.current) return
+    projectOperationRef.current = true
+    ++projectRevisionRef.current
+    setProjectBusy(true)
+    setProjectError('')
+    try { await task() }
+    catch (error) { setProjectError(error instanceof Error ? error.message : String(error)) }
+    finally { projectOperationRef.current = false; setProjectBusy(false) }
+  }
+  const switchProject = async (target: LocalProject) => withProjectOperation(async () => {
+    if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) { setHomeOpen(false); return }
+    await persistCurrentProject()
+    // Validate the target before touching the current canvas.
+    if (target.blob) await inspectBackup(new File([target.blob], `${target.name}.inotes`))
+    const previousId = localStorage.getItem(ACTIVE_PROJECT_KEY)
+    localStorage.setItem(ACTIVE_PROJECT_KEY, target.id)
+    localStorage.setItem('infinite-notes-project-name', target.name)
+    try {
+      if (target.blob) await importBackup(new File([target.blob], `${target.name}.inotes`), true)
+      else {
+        for (const key of BACKUP_KEYS) localStorage.removeItem(key)
+        await clearStoredImages()
+        window.location.reload()
+      }
+    } catch (error) {
+      if (previousId) localStorage.setItem(ACTIVE_PROJECT_KEY, previousId)
+      localStorage.setItem('infinite-notes-project-name', projectName)
+      throw error
+    }
+  })
+  const newProject = async () => {
+    const name = window.prompt('Название нового проекта', 'Новый проект')?.trim()
+    if (!name) return
+    await withProjectOperation(async () => {
+      await persistCurrentProject()
+      const next = createProject(name)
+      await putProject(next)
+      localStorage.setItem(ACTIVE_PROJECT_KEY, next.id)
+      localStorage.setItem('infinite-notes-project-name', next.name)
+      for (const key of BACKUP_KEYS) localStorage.removeItem(key)
+      await clearStoredImages()
+      window.location.reload()
+    })
+  }
+  const saveProjectFile = async () => withProjectOperation(async () => {
+    await persistCurrentProject()
+    const blob = await exportBackup()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${projectName.replace(/[\\/:*?"<>|]/g, '_').trim() || 'InfiniteNotes'}.inotes`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000)
+  })
+  const openProjectFile = async (file?: File) => {
+    if (!file) return
+    await withProjectOperation(async () => {
+      if (!/\.(inotes|zip)$/i.test(file.name)) throw new Error('Выберите файл .inotes или .zip')
+      const info = await inspectBackup(file)
+      const name = file.name.replace(/\.(inotes|zip)$/i, '')
+      if (!window.confirm(`Добавить «${name}» в локальные проекты?\nЗаметок: ${info.notes}, изображений: ${info.images}.`)) return
+      await persistCurrentProject()
+      const next = createProject(name, file)
+      await putProject(next)
+      localStorage.setItem(ACTIVE_PROJECT_KEY, next.id)
+      localStorage.setItem('infinite-notes-project-name', name)
+      await importBackup(file, true)
+    })
+  }
+  const openRenameProject = (target?: LocalProject) => {
+    const current = target || projects.find(project => project.id === localStorage.getItem(ACTIVE_PROJECT_KEY))
+    if (!current) { setProjectError('Не удалось найти проект для переименования.'); return }
+    setProjectError('')
+    setRenameValue(current.name)
+    setRenameTarget(current)
+  }
+  const renameProject = async () => {
+    if (!renameTarget || projectOperationRef.current) return
+    const name = renameValue.trim()
+    if (!name) { setProjectError('Введите название проекта.'); return }
+    const targetId = renameTarget.id
+    await withProjectOperation(async () => {
+      const current = (await listProjects()).find(project => project.id === targetId)
+      if (!current) throw new Error('Проект больше не найден в каталоге')
+      await putProject({ ...current, name, updatedAt: new Date().toISOString() })
+      if (targetId === localStorage.getItem(ACTIVE_PROJECT_KEY)) {
+        setProjectName(name)
+        localStorage.setItem('infinite-notes-project-name', name)
+      }
+      await refreshProjects()
+      setRenameTarget(null)
+    })
+  }
+  const duplicateProject = async (target: LocalProject) => withProjectOperation(async () => {
+    if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) await persistCurrentProject()
+    const source = (await listProjects()).find(item => item.id === target.id)
+    if (!source) throw new Error('Проект не найден')
+    await putProject(createProject(`${source.name} — копия`, source.blob))
+    await refreshProjects()
+  })
+  const deleteProject = async (target: LocalProject) => {
+    if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) { setProjectError('Нельзя удалить открытый проект. Сначала переключитесь на другой.'); return }
+    if (!window.confirm(`Удалить проект «${target.name}»? Это удалит его локальную копию. Для сохранения проекта сначала экспортируйте .inotes.`)) return
+    await withProjectOperation(async () => { await removeProject(target.id); await refreshProjects() })
+  }
+
   const jumpToSearchResult = (id: string) => {
     focusNote(id)
     setSearchHighlightedId(id)
@@ -780,8 +958,12 @@ function Workspace() {
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneClick={() => setMenu(null)}
+        onPaneContextMenu={(event) => { event.preventDefault(); setMenu({ type: 'pane', x: event.clientX, y: event.clientY }) }}
         panOnDrag={[1]}
-        selectionOnDrag={false}
+        selectionOnDrag={true}
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode="Shift"
+        panActivationKeyCode="Space"
         zoomOnScroll={true}
         minZoom={0.2}
         maxZoom={3}
@@ -799,6 +981,7 @@ function Workspace() {
         />
       </ReactFlow>
 
+      <button type="button" className="project-home-toggle" onClick={() => { setHomeOpen(true); setMenu(null) }} title="Меню проектов">☰ Проекты</button>
       <button type="button" className="settings-toggle" onClick={() => { setSettingsOpen(true); setMenu(null) }} aria-label="Открыть настройки">
         ⚙ Настройки
       </button>
@@ -880,36 +1063,15 @@ function Workspace() {
                 <span>Выбрана заметка</span>
                 <strong>{selectedNote.data.title}</strong>
               </div>
-              <h3>Исходящие связи ({outgoingNotes.length})</h3>
-              {outgoingNotes.length === 0 && <p className="navigation-empty">Нет исходящих связей</p>}
-              {outgoingNotes.map((note) => (
-                <button key={note.id} type="button" className="navigation-item"
-                  onClick={() => focusNote(note.id)} title="Перейти к заметке">
-                  <span>{note.data.title}</span><span aria-hidden="true">↗</span>
-                </button>
-              ))}
-              <h3>Связи пунктов ({visibleItemLinks.filter(link => link.sourceNoteId === selectedNote.id).length})</h3>
-              {visibleItemLinks.filter(link => link.sourceNoteId === selectedNote.id).map(link => (
-                <button key={link.id} type="button" className="navigation-item"
-                  onClick={() => focusNote(link.targetNoteId)} title="Перейти к связанной заметке">
-                  <span>🔗 {link.itemLabel} → {nodes.find(n => n.id === link.targetNoteId)?.data.title}</span><span>↗</span>
-                </button>
-              ))}
-              <h3>Ссылки на пункты этой заметки</h3>
-              {visibleItemLinks.filter(link => link.targetNoteId === selectedNote.id).map(link => (
-                <button key={link.id} type="button" className="navigation-item"
-                  onClick={() => focusNote(link.sourceNoteId)}>
-                  <span>{nodes.find(n => n.id === link.sourceNoteId)?.data.title} · {link.itemLabel}</span><span>↗</span>
-                </button>
-              ))}
-              <h3>Входящие связи ({incomingNotes.length})</h3>
-              {incomingNotes.length === 0 && <p className="navigation-empty">Нет входящих связей</p>}
-              {incomingNotes.map((note) => (
-                <button key={note.id} type="button" className="navigation-item"
-                  onClick={() => focusNote(note.id)} title="Перейти к заметке">
-                  <span>{note.data.title}</span><span aria-hidden="true">↗</span>
-                </button>
-              ))}
+              <div className="navigation-unified-title"><h3>Все связи</h3><span>{outgoingNotes.length + incomingNotes.length + visibleItemLinks.filter(link => link.sourceNoteId === selectedNote.id || link.targetNoteId === selectedNote.id).length}</span></div>
+              {outgoingNotes.length + incomingNotes.length + visibleItemLinks.filter(link => link.sourceNoteId === selectedNote.id || link.targetNoteId === selectedNote.id).length === 0 && <p className="navigation-empty">У этой заметки пока нет связей.</p>}
+              {outgoingNotes.map(note => <button key={`out-${note.id}`} type="button" className="navigation-item navigation-item-compact" onClick={() => focusNote(note.id)} title="Перейти к заметке"><span className="navigation-type-icon" title="Исходящая связь с заметкой">↗</span><span className="navigation-link-text"><strong>{note.data.title}</strong><small>Заметка · Исходящая</small></span><span>›</span></button>)}
+              {incomingNotes.map(note => <button key={`in-${note.id}`} type="button" className="navigation-item navigation-item-compact" onClick={() => focusNote(note.id)} title="Перейти к заметке"><span className="navigation-type-icon" title="Входящая связь с заметкой">↙</span><span className="navigation-link-text"><strong>{note.data.title}</strong><small>Заметка · Входящая</small></span><span>›</span></button>)}
+              {visibleItemLinks.filter(link => link.sourceNoteId === selectedNote.id || link.targetNoteId === selectedNote.id).map(link => {
+                const outgoing = link.sourceNoteId === selectedNote.id
+                const destination = nodes.find(node => node.id === (outgoing ? link.targetNoteId : link.sourceNoteId))
+                return <button key={`item-${link.id}`} type="button" className="navigation-item navigation-item-compact" onClick={() => focusNote(outgoing ? link.targetNoteId : link.sourceNoteId)} title="Перейти к заметке"><span className="navigation-type-icon" title="Связь пункта">🔗</span><span className="navigation-link-text"><strong>{destination?.data.title || 'Заметка'}</strong><small>{outgoing ? 'Пункт → заметка' : 'Заметка → пункт'} · {link.itemLabel}</small></span><span>›</span></button>
+              })}
             </>
           )}
         </aside>
@@ -921,8 +1083,8 @@ function Workspace() {
           ⌂
         </button>
 
-        <button onClick={addNote} title="Создать заметку">+</button>
-        <button onClick={addGallery} title="Создать заметку-галерею">▦</button>
+        <button onClick={() => addNote()} title="Создать заметку">+</button>
+        <button onClick={() => addGallery()} title="Создать заметку-галерею">▦</button>
       </div>
 
       {/* Индикатор режима создания связи */}
@@ -953,7 +1115,12 @@ function Workspace() {
             ),
           }}
         >
-          {menu.type === 'node' ? (
+          {menu.type === 'pane' ? (
+            <>
+              <button onClick={() => addNote({ x: menu.x, y: menu.y })}>＋ Создать заметку здесь</button>
+              <button onClick={() => { addGallery({ x: menu.x, y: menu.y }); setMenu(null) }}>▦ Создать галерею здесь</button>
+            </>
+          ) : menu.type === 'node' ? (
             <>
               <button onClick={startEditing}>
                 ✎ Редактировать
@@ -986,6 +1153,49 @@ function Workspace() {
         </div>
       )}
 
+      <input ref={projectInputRef} type="file" accept=".inotes,.zip,application/zip" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void openProjectFile(file) }} />
+      {renameTarget && <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setRenameTarget(null) }}>
+        <form role="dialog" aria-modal="true" aria-label="Переименовать проект" onSubmit={event => { event.preventDefault(); void renameProject() }} style={{ width: 'min(440px, 100%)', padding: 24, borderRadius: 16, border: '1px solid var(--accent, #aa83bc)', background: 'var(--panel-bg, #33343d)', color: 'var(--text-color, #fff)', boxShadow: '0 20px 70px rgba(0,0,0,.5)', display: 'grid', gap: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 21 }}>✎ Переименовать проект</h2>
+          <label htmlFor="project-rename-input">Новое название</label>
+          <input id="project-rename-input" autoFocus maxLength={120} value={renameValue} disabled={projectBusy} onChange={event => setRenameValue(event.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 9, border: '1px solid #8a8095', background: '#25252d', color: '#fff', fontSize: 15 }} />
+          {projectError && <p role="alert" style={{ color: '#ffb2b2', margin: 0 }}>{projectError}</p>}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button type="button" disabled={projectBusy} onClick={() => { setRenameTarget(null); setProjectError('') }} style={{ padding: '10px 16px', borderRadius: 9, border: '1px solid #8a8095', background: '#454650', color: '#fff', cursor: 'pointer' }}>Отмена</button>
+            <button type="submit" disabled={projectBusy || !renameValue.trim()} style={{ padding: '10px 16px', borderRadius: 9, border: '1px solid #b58bce', background: '#75518b', color: '#fff', cursor: 'pointer' }}>{projectBusy ? 'Сохраняем…' : 'Сохранить'}</button>
+          </div>
+        </form>
+      </div>}
+      {homeOpen && <div className="project-home-overlay" role="presentation">
+        <section className="project-home-dialog" role="dialog" aria-modal="true" aria-label="Проекты Infinite Notes">
+          <div className="project-home-brand"><span className="project-home-logo">∞</span><div><span className="project-home-kicker">INFINITE NOTES · v0.2.0</span><h1>Ваши идеи. Ваше пространство.</h1></div></div>
+          <p className="project-home-intro">Локальные проекты сохраняются автоматически. Выбирайте пространство одним нажатием; файл .inotes нужен только для переноса и резервного копирования.</p>
+          <div className="project-home-grid">
+            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => void newProject()}><strong>＋ Новый проект</strong><span>Создать отдельный пустой холст</span></button>
+            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => projectInputRef.current?.click()}><strong>▤ Импортировать проект</strong><span>Добавить .inotes или ZIP в список</span></button>
+            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => setHomeOpen(false)}><strong>↗ Продолжить</strong><span>{projectName}</span></button>
+            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => void saveProjectFile()}><strong>↓ Экспортировать .inotes</strong><span>Сохранить копию на диск или флешку</span></button>
+          </div>
+          <div className="project-catalog-header"><h2>Мои проекты</h2><span>{projects.length} всего</span></div>
+          <div className="project-catalog" role="list" aria-label="Сохранённые проекты">
+            <div className="project-catalog-columns"><span>Проект</span><span>Создан</span><span>Изменён</span><span>Действия</span></div>
+            {projects.map(project => <div className={`project-catalog-row ${project.id === localStorage.getItem(ACTIVE_PROJECT_KEY) ? 'current' : ''}`} key={project.id} role="listitem">
+              <button type="button" className="project-catalog-open" disabled={projectBusy} onClick={() => void switchProject(project)} title="Открыть проект"><span className="project-catalog-icon">▤</span><span><strong>{project.name}</strong>{project.id === localStorage.getItem(ACTIVE_PROJECT_KEY) && <small>Открыт сейчас</small>}</span></button>
+              <time title={project.createdAt}>{new Date(project.createdAt).toLocaleString('ru-RU')}</time>
+              <time title={project.updatedAt}>{new Date(project.updatedAt).toLocaleString('ru-RU')}</time>
+              <div className="project-catalog-actions">
+                <button type="button" disabled={projectBusy} title="Переименовать" onClick={() => openRenameProject(project)}>✎</button>
+                <button type="button" disabled={projectBusy} title="Создать копию" onClick={() => void duplicateProject(project)}>⧉</button>
+                <button type="button" disabled={projectBusy || project.id === localStorage.getItem(ACTIVE_PROJECT_KEY)} title="Удалить проект" onClick={() => void deleteProject(project)}>×</button>
+              </div>
+            </div>)}
+            {!projectsReady && <p className="project-catalog-loading">Загружаем каталог проектов…</p>}
+          </div>
+          {projectError && <p className="project-home-error" role="alert">{projectError}</p>}
+          <div className="project-home-bottom"><button type="button" onClick={() => openRenameProject()}>✎ Переименовать</button><button type="button" onClick={() => { setHomeOpen(false); setSettingsOpen(true) }}>⚙ Настройки</button><button type="button" onClick={() => { setHomeOpen(false); setHelpOpen(true) }}>? Справка</button></div>
+        </section>
+      </div>}
+
       {helpOpen && (
         <div className="help-overlay" onMouseDown={event => { if (event.target === event.currentTarget) setHelpOpen(false) }}>
           <section className="help-dialog" role="dialog" aria-modal="true" aria-label="Справка Infinite Notes">
@@ -1002,13 +1212,13 @@ function Workspace() {
                 ] as const).map(([id, label]) => <button key={id} type="button" className={helpSection === id ? 'active' : ''} onClick={() => setHelpSection(id)}>{label}</button>)}
               </nav>
               <div className="help-content">
-                {helpSection === 'start' && <><h3>Начало работы</h3><p>Infinite Notes — бесконечный холст для заметок, идей и взаимосвязей.</p><ol><li>Нажми <strong>+</strong> в нижней панели, чтобы создать заметку.</li><li>Перемещай карточки по холсту мышью.</li><li>Щёлкни по заметке правой кнопкой мыши, чтобы открыть действия: редактирование, создание связи и удаление.</li><li>Используй «⌕ Поиск» для поиска по названию и тексту.</li><li>Кнопка «⌂» возвращает к обзору холста.</li></ol><p className="help-tip">Совет: сохраняй резервные копии перед крупными изменениями.</p></>}
+                {helpSection === 'start' && <><h3>Начало работы</h3><p>Infinite Notes — бесконечный холст для заметок, идей и взаимосвязей.</p><ol><li>Нажми <strong>+</strong> в нижней панели или ПКМ по пустому холсту, чтобы создать заметку в выбранной точке.</li><li>Перемещай карточки по холсту мышью.</li><li>Щёлкни по заметке правой кнопкой мыши, чтобы открыть действия: редактирование, создание связи и удаление.</li><li>Используй «⌕ Поиск» для поиска по названию и тексту.</li><li>Кнопка «⌂» возвращает к обзору холста.</li></ol><p className="help-tip">Совет: сохраняй резервные копии перед крупными изменениями.</p></>}
                 {helpSection === 'editor' && <><h3>Редактор заметок</h3><p>Открой контекстное меню заметки и выбери «Редактировать». В редакторе можно менять название, форматировать текст и создавать списки.</p><ul><li>Жирный, курсив, подчёркивание, зачёркивание, цвет текста и выделение доступны в панели инструментов.</li><li>Кнопки «→ Подпункт» и «← Уровень» меняют вложенность пунктов; также доступны Tab и Shift+Tab в списках.</li><li>Подпункты можно сворачивать и разворачивать.</li><li>Выдели текст для быстрого форматирования во всплывающей панели.</li><li>Кнопка «⛶ На весь экран» расширяет окно; «Свернуть» возвращает обычный размер.</li></ul><p className="help-tip">Не забудь нажать «Сохранить» после редактирования.</p></>}
                 {helpSection === 'links' && <><h3>Связи между заметками</h3><p>Нажми правой кнопкой на заметку и выбери создание связи, затем укажи вторую заметку. Линии можно настроить в «⚙ Настройки → Связи».</p><p>Для связи конкретного пункта поставь курсор в пункт списка и нажми «🔗 Связать пункт» в редакторе. Выбери целевую заметку и сохрани изменения.</p><p>Нажатие на 🔗 рядом с пунктом показывает связанные заметки. В боковой панели «Связи» доступны переходы по связям.</p></>}
                 {helpSection === 'images' && <><h3>Изображения и галереи</h3><p>В текстовом редакторе используй кнопку добавления изображения. Поддерживаются PNG, JPEG, WebP и GIF.</p><p>Для отдельной заметки-галереи нажми «▦» на нижней панели. В галерее можно добавлять изображения и подписи, открывать увеличенный просмотр и удалять элементы.</p><p>Изображения хранятся локально в IndexedDB этого приложения. Не очищай данные сайта или приложения без резервной копии.</p></>}
-                {helpSection === 'backup' && <><h3>Резервные копии</h3><ol><li>Открой «⚙ Настройки → Резервные копии».</li><li>Нажми экспорт и сохрани ZIP в надёжном месте.</li><li>Для восстановления выбери ZIP и проверь предварительную информацию.</li><li>Подтверди импорт: текущие данные будут заменены содержимым архива.</li></ol><p className="help-tip">Перед импортом обязательно экспортируй текущий проект. Копия папки с исходным кодом не заменяет резервную копию заметок и изображений.</p></>}
-                {helpSection === 'controls' && <><h3>Управление</h3><div className="help-shortcuts"><span>Ctrl + F</span><span>Открыть поиск (вне редактора)</span><span>Escape</span><span>Закрыть поиск</span><span>Колёсико мыши</span><span>Масштаб холста</span><span>Правая кнопка мыши</span><span>Контекстное меню заметки или связи</span><span>Tab / Shift + Tab</span><span>Уровень вложенности в списке</span></div><p>Перемещение холста и карточек выполняется мышью. Для точного управления связями используй контекстные меню.</p></>}
-                {helpSection === 'about' && <><h3>О Infinite Notes</h3><p><strong>Infinite Notes</strong> — локальное приложение для организации заметок на бесконечном холсте.</p><p>Технологии: React, TypeScript, Vite, React Flow и Tiptap.</p><p>Заметки и настройки сохраняются в локальном хранилище приложения; изображения — в IndexedDB. Для переноса данных используй экспорт и импорт ZIP.</p><p>Текущий этап разработки: 16 — справка и документация. Публичный релиз и установщик запланированы на этап 17.</p></>}
+                {helpSection === 'backup' && <><h3>Резервные копии</h3><ol><li>Открой «⚙ Настройки → Резервные копии».</li><li>Нажми экспорт и сохрани ZIP в надёжном месте.</li><li>Для восстановления выбери ZIP и проверь предварительную информацию.</li><li>Подтверди импорт: текущие данные будут заменены содержимым архива.</li></ol><p className="help-tip">Через кнопку «☰ Проекты» можно создать пространство, открыть .inotes и сохранить проект в .inotes. Этот файл совместим с ZIP-бэкапом; изменения внутри открытого файла не сохраняются автоматически — скачивай новую версию после работы. Перед переключением проектов сохрани текущий!</p></>}
+                {helpSection === 'controls' && <><h3>Управление</h3><div className="help-shortcuts"><span>Ctrl + F</span><span>Открыть поиск (вне редактора)</span><span>Escape</span><span>Закрыть поиск</span><span>Колёсико мыши</span><span>Масштаб холста</span><span>ЛКМ + перетаскивание</span><span>Выделение заметок рамкой</span><span>Пробел + перетаскивание</span><span>Перемещение холста</span><span>Правая кнопка мыши</span><span>Контекстное меню заметки или связи</span><span>Tab / Shift + Tab</span><span>Уровень вложенности в списке</span></div><p>ЛКМ с перетаскиванием по пустому холсту выделяет несколько заметок рамкой; Shift + клик добавляет заметку. Пробел + перетаскивание перемещает холст, а средняя кнопка мыши также перемещает камеру. ПКМ по пустому холсту открывает создание заметки и галереи.</p></>}
+                {helpSection === 'about' && <><h3>О Infinite Notes</h3><p><strong>Infinite Notes</strong> — локальное приложение для организации заметок на бесконечном холсте.</p><p>Технологии: React, TypeScript, Vite, React Flow и Tiptap.</p><p>Заметки и настройки сохраняются в локальном хранилище приложения; изображения — в IndexedDB. Для переноса данных используй экспорт и импорт ZIP.</p><p>Версия 0.2.0 — управление проектами, выделение заметок и обновлённая панель связей. Windows-версия работает на Tauri 2.</p></>}
               </div>
             </div>
           </section>

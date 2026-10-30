@@ -865,3 +865,53 @@
 .help-toggle {
   left: 365px;
 }
+/* Infinite Notes 0.2.0 — projects, compact connections and marquee selection */
+.workspace .project-home-toggle { position:absolute; top:20px; right:190px; z-index:15; padding:11px 14px; border-radius:11px; background:var(--control-bg); border:1px solid var(--border-color); color:var(--text-main); cursor:pointer; }
+.workspace .project-home-toggle:hover {background:var(--control-hover)}
+.workspace .navigation-unified-title {display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px}
+.workspace .navigation-unified-title h3 {margin:0}
+.workspace .navigation-unified-title span {color:var(--text-muted);font-size:12px}
+.workspace .navigation-item-compact {gap:9px;padding:10px;margin:5px 0;min-height:52px}
+.workspace .navigation-type-icon {font-size:16px;flex:0 0 22px;text-align:center}
+.workspace .navigation-link-text {flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow-wrap:anywhere}
+.workspace .navigation-link-text strong {font-size:12px;font-weight:600}
+.workspace .navigation-link-text small {font-size:11px;line-height:1.35;color:var(--text-muted)}
+.project-home-overlay {position:absolute;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(10,9,15,.79);backdrop-filter:blur(12px);box-sizing:border-box}
+.project-home-dialog {width:min(720px,96vw);max-height:92vh;overflow:auto;box-sizing:border-box;background:var(--dialog-bg);color:var(--text-main);border:1px solid var(--border-color);border-radius:22px;padding:clamp(22px,4vw,38px);box-shadow:0 28px 85px #0008}
+.project-home-brand {display:flex;align-items:center;gap:16px}
+.project-home-logo {font-size:40px;display:grid;place-items:center;width:64px;height:64px;border-radius:18px;background:var(--control-bg);color:var(--accent);border:1px solid var(--border-color)}
+.project-home-kicker {font-size:11px;letter-spacing:.15em;color:var(--text-muted)}
+.project-home-brand h1 {font-size:23px;margin:5px 0}
+.project-home-intro {line-height:1.65;color:var(--text-muted);font-size:14px;margin:20px 0 24px}
+.project-home-grid {display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.project-home-grid button {text-align:left;display:flex;flex-direction:column;gap:9px;padding:22px;border-radius:14px;border:1px solid var(--border-color);background:var(--control-bg);color:var(--text-main);cursor:pointer}
+.project-home-grid button:hover {background:var(--control-hover);border-color:var(--accent)}
+.project-home-grid strong {font-size:16px}
+.project-home-grid span {font-size:12px;color:var(--text-muted)}
+.project-home-bottom {display:flex;flex-wrap:wrap;gap:12px;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-color)}
+.project-home-bottom button {color:var(--text-main);background:transparent;border:0;cursor:pointer;padding:8px}
+.project-home-bottom button:hover {color:var(--accent)}
+.project-home-error {color:#ff9aaf;font-size:13px}
+@media(max-width:600px){.project-home-grid{grid-template-columns:1fr}.workspace .project-home-toggle{top:70px;right:12px}.project-home-dialog{padding:20px}}
+
+/* v0.2.0: project manager */
+.project-home-dialog { width:min(1040px,96vw); }
+.project-catalog-header {display:flex;align-items:center;justify-content:space-between;margin:25px 0 10px;gap:12px}
+.project-catalog-header h2 {font-size:17px;margin:0}
+.project-catalog-header span {font-size:12px;color:var(--text-muted)}
+.project-catalog {border:1px solid var(--border-color);border-radius:13px;overflow:auto;max-height:35vh}
+.project-catalog-columns,.project-catalog-row {display:grid;grid-template-columns:minmax(170px,2fr) minmax(120px,1fr) minmax(120px,1fr) 115px;align-items:center;gap:12px;padding:10px 13px;min-width:670px}
+.project-catalog-columns {background:var(--control-bg);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.project-catalog-row {border-top:1px solid var(--border-color);font-size:12px}
+.project-catalog-row.current {background:var(--control-bg)}
+.project-catalog-row time {color:var(--text-muted)}
+.project-catalog-open {display:flex;gap:10px;align-items:center;text-align:left;background:transparent;border:0;color:var(--text-main);cursor:pointer;padding:4px;min-width:0}
+.project-catalog-open strong {display:block;overflow-wrap:anywhere;font-size:13px}
+.project-catalog-open small {display:block;color:var(--accent);margin-top:3px}
+.project-catalog-open:hover strong {color:var(--accent)}
+.project-catalog-icon {font-size:20px;color:var(--accent)}
+.project-catalog-actions {display:flex;gap:4px}
+.project-catalog-actions button {border:1px solid var(--border-color);background:var(--control-bg);color:var(--text-main);border-radius:7px;padding:5px 9px;cursor:pointer}
+.project-catalog-actions button:hover {border-color:var(--accent)}
+.project-catalog-actions button:disabled {opacity:.35;cursor:not-allowed}
+.project-catalog-loading {padding:12px;color:var(--text-muted)}

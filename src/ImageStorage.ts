@@ -104,3 +104,17 @@ export async function restoreStoredImages(images: { id: string; blob: Blob }[]):
     urls.delete(id)
   }
 }
+
+// Clear images when creating a genuinely empty workspace. Never called during backup import.
+export async function clearStoredImages(): Promise<void> {
+  const database = await db()
+  await new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(STORE, 'readwrite')
+    tx.objectStore(STORE).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+  for (const url of urls.values()) URL.revokeObjectURL(url)
+  urls.clear()
+}

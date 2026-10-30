@@ -1,4 +1,4 @@
-import { allStoredImages, restoreStoredImages } from './ImageStorage'
+import { allStoredImages, restoreStoredImages, clearStoredImages } from './ImageStorage'
 
 export const BACKUP_KEYS = [
   'infinite-notes-v1', 'infinite-notes-edges-v1', 'infinite-notes-item-links-v1',
@@ -156,19 +156,25 @@ export async function inspectBackup(file: File) {
   if (file.size > LIMIT) throw new Error('Архив больше 512 МБ')
   return validate(readZip(await file.arrayBuffer())).preview
 }
-export async function importBackup(file: File): Promise<void> {
+export async function importBackup(file: File, replaceImages = false): Promise<void> {
   if (file.size > LIMIT) throw new Error('Архив больше 512 МБ')
   const { manifest, images } = validate(readZip(await file.arrayBuffer()))
   // Preserve the existing localStorage snapshot if the write fails.
   const previous = Object.fromEntries(BACKUP_KEYS.map(key => [key, localStorage.getItem(key)]))
-  await restoreStoredImages(images)
+  const previousImages = replaceImages ? await allStoredImages() : null
   try {
+    if (replaceImages) await clearStoredImages()
+    await restoreStoredImages(images)
     for (const key of BACKUP_KEYS) {
       const value = manifest.storage[key]
       if (value === null) localStorage.removeItem(key)
       else localStorage.setItem(key, value)
     }
   } catch (error) {
+    if (previousImages) {
+      await clearStoredImages()
+      await restoreStoredImages(previousImages)
+    }
     for (const key of BACKUP_KEYS) {
       const value = previous[key]
       if (value === null) localStorage.removeItem(key)

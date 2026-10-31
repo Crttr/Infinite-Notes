@@ -2,9 +2,11 @@
 import { useEffect } from 'react'
 import { RichTextView } from './RichText'
 import { ImageGallery } from './ImageGallery'
+import { CanvasReference } from './CanvasReference'
 import type { GalleryImage } from './ImageStorage'
 import {
   useUpdateNodeInternals,
+  NodeResizer,
   Handle,
   Position,
   type Node,
@@ -16,7 +18,13 @@ export type NoteData = {
   content: string
   richHtml?: string
   gallery?: GalleryImage[]
-  kind?: 'note' | 'gallery'
+  canvasImageId?: string
+  canvasImageWidth?: number
+  onResizeCanvasImage?: (id: string, width: number) => void
+  onUpdateGallery?: (id: string, gallery: GalleryImage[]) => void
+  onResizeNote?: (id: string, width: number, height: number) => void
+  onResizeStart?: () => void
+  kind?: 'note' | 'gallery' | 'canvasImage'
   collapsed?: boolean
   onToggle?: (id: string) => void
   itemLinks?: { itemId: string; targetId: string; targetTitle: string }[]
@@ -44,11 +52,26 @@ export function NoteCard({
     updateNodeInternals(id)
   }, [id, data.collapsed, updateNodeInternals])
 
+  if (data.kind === 'canvasImage') {
+    return <CanvasReference imageId={data.canvasImageId} width={data.canvasImageWidth ?? 320}
+      selected={Boolean(selected)} onResize={width => data.onResizeCanvasImage?.(id, width)} />
+  }
+
   return (
+    <>
+    <NodeResizer
+      isVisible={selected && !data.collapsed}
+      minWidth={data.kind === 'gallery' ? 320 : 180}
+      minHeight={data.kind === 'gallery' ? 230 : 110}
+      handleClassName="inotes-note-resize-handle"
+      lineClassName="inotes-note-resize-line"
+      onResizeStart={() => data.onResizeStart?.()}
+      onResizeEnd={(_, params) => data.onResizeNote?.(id, params.width, params.height)}
+    />
     <div
       className={`note-card ${
         selected ? 'note-selected' : ''
-      } ${data.collapsed ? 'note-collapsed' : ''
+      } ${data.kind === 'gallery' ? 'note-gallery' : ''} ${data.collapsed ? 'note-collapsed' : ''
       }`}
     >
       {/* Входящие подключения */}
@@ -90,7 +113,7 @@ export function NoteCard({
 
       {!data.collapsed && (
         <div className="note-content">
-          {data.kind === 'gallery' ? <ImageGallery images={data.gallery || []} /> : data.richHtml ? <RichTextView html={data.richHtml} links={data.itemLinks} onFollow={data.onFollowItemLink} /> : (data.content || 'ПКМ → Редактировать')}
+          {data.kind === 'gallery' ? <ImageGallery images={data.gallery || []} onChange={data.onUpdateGallery ? images => data.onUpdateGallery?.(id, images) : undefined} inlineMode /> : data.richHtml ? <RichTextView html={data.richHtml} links={data.itemLinks} onFollow={data.onFollowItemLink} /> : (data.content || 'ПКМ → Редактировать')}
         </div>
       )}
 
@@ -115,5 +138,6 @@ export function NoteCard({
         />
       ))}
     </div>
+    </>
   )
 }

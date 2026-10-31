@@ -19,6 +19,75 @@ const EmbeddedImage = TiptapNode.create({
   } },
   parseHTML() { return [{ tag: 'img[data-image-id]' }] },
   renderHTML({ HTMLAttributes }) { return ['img', { ...HTMLAttributes, style: `max-width:100%;width:${Math.min(900, Math.max(80, Number(HTMLAttributes.width) || 320))}px` }] },
+  addNodeView() {
+    return ({ node, editor, getPos }) => {
+      const outer = document.createElement('div')
+      outer.className = 'inotes-image-node'
+      outer.contentEditable = 'false'
+      const img = document.createElement('img')
+      img.draggable = false
+      img.alt = 'Изображение в заметке'
+      const handle = document.createElement('span')
+      handle.className = 'inotes-image-resize'
+      handle.title = 'Потяните для изменения размера'
+      handle.setAttribute('role', 'button')
+      handle.setAttribute('aria-label', 'Изменить размер изображения')
+      outer.append(img, handle)
+      const paint = (current: typeof node) => {
+        img.src = String(current.attrs.src || '')
+        img.dataset.imageId = String(current.attrs.imageId || '')
+        outer.style.width = `${Math.min(900, Math.max(80, Number(current.attrs.width) || 320))}px`
+      }
+      paint(node)
+      let cleanup: (() => void) | null = null
+      outer.addEventListener('click', event => {
+        event.stopPropagation()
+        const pos = typeof getPos === 'function' ? getPos() : undefined
+        if (typeof pos === 'number') editor.commands.setNodeSelection(pos)
+      })
+      handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        cleanup?.()
+        const startX = event.clientX
+        const initial = outer.getBoundingClientRect().width
+        outer.classList.add('inotes-image-resizing')
+        const move = (next: PointerEvent) => {
+          const width = Math.max(80, Math.min(900, Math.round(initial + next.clientX - startX)))
+          outer.style.width = `${width}px`
+        }
+        const finish = (next: PointerEvent) => {
+          move(next)
+          const width = Math.max(80, Math.min(900, Math.round(parseFloat(outer.style.width))))
+          cleanup?.()
+          const pos = typeof getPos === 'function' ? getPos() : undefined
+          if (typeof pos !== 'number') return
+          const tr = editor.state.tr.setNodeMarkup(pos, undefined, { ...editor.state.doc.nodeAt(pos)?.attrs, width })
+          editor.view.dispatch(tr)
+        }
+        cleanup = () => {
+          window.removeEventListener('pointermove', move)
+          window.removeEventListener('pointerup', finish)
+          window.removeEventListener('pointercancel', finish)
+          outer.classList.remove('inotes-image-resizing')
+          cleanup = null
+        }
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', finish)
+        window.addEventListener('pointercancel', finish)
+      })
+      return {
+        dom: outer,
+        update: updated => { if (updated.type !== node.type) return false; paint(updated); return true },
+        selectNode: () => outer.classList.add('inotes-image-selected'),
+        deselectNode: () => outer.classList.remove('inotes-image-selected'),
+        stopEvent: event => event.target === handle || (event.target instanceof Node && handle.contains(event.target)),
+        ignoreMutation: () => true,
+        destroy: () => cleanup?.(),
+      }
+    }
+  },
 })
 
 // The collapsed flag is stored on list items, not in temporary React state.
@@ -158,7 +227,6 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
   const [initialContent, setInitialContent] = useState<string | null>(null)
   const initialValues = useRef({ initialHtml, initialText })
   const [imageError, setImageError] = useState('')
-  const [imageWidth, setImageWidth] = useState(320)
   const fileRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     let alive = true
@@ -222,18 +290,36 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
         return true
       },
       handleKeyDown: (_view, event) => {
-        if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey) return false
         const current = editorRef.current
-        if (!current || !current.isActive('listItem')) return false
-        const chain = current.chain().focus()
-        const possible = event.shiftKey
-          ? current.can().liftListItem('listItem')
-          : current.can().sinkListItem('listItem')
-        if (!possible) return false
-        event.preventDefault()
-        if (event.shiftKey) chain.liftListItem('listItem').run()
-        else chain.sinkListItem('listItem').run()
-        return true
+        if (!current || event.altKey || event.metaKey || event.isComposing) return false
+        if (event.ctrlKey && event.shiftKey && (event.code === 'Digit7' || event.code === 'Digit8')) {
+          event.preventDefault()
+          if (event.code === 'Digit7') current.chain().focus().toggleOrderedList().run()
+          else current.chain().focus().toggleBulletList().run()
+          return true
+        }
+        if (event.ctrlKey) return false
+
+        // Внутри списка Tab и Shift+Tab всегда остаются в редакторе.
+        // Если вложенность уже максимальна/минимальна, фокус не прыгает на кнопки окна.
+        if (event.key === 'Tab' && current.isActive('listItem')) {
+          event.preventDefault()
+          if (event.shiftKey) {
+            if (current.can().liftListItem('listItem')) current.chain().focus().liftListItem('listItem').run()
+          } else if (current.can().sinkListItem('listItem')) {
+            current.chain().focus().sinkListItem('listItem').run()
+          }
+          return true
+        }
+
+        // В обычном абзаце Tab вставляет отступ, а не переводит фокус на панель.
+        // Shift+Tab вне списка оставляем штатной навигации клавиатуры.
+        if (event.key === 'Tab' && !event.shiftKey) {
+          event.preventDefault()
+          current.chain().focus().insertContent('\u00a0\u00a0\u00a0\u00a0').run()
+          return true
+        }
+        return false
       },
     },
     onUpdate: ({ editor: current }) => changeRef.current(sanitizeRichText(canonicalImages(current.getHTML())), current.getText({ blockSeparator: '\n' })),
@@ -242,6 +328,29 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
     onTransaction: () => { setRevision(n => n + 1) },
   })
   editorRef.current = editor
+  useEffect(() => {
+    if (!editor) return
+    const clearImageSelection = (event: PointerEvent) => {
+      if (!editor.isActive('embeddedImage')) return
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (target instanceof Element && target.closest('.inotes-image-node')) return
+      // Let ProseMirror handle clicks inside the editor itself.
+      if (editor.view.dom.contains(target)) return
+      const pos = editor.state.selection.from
+      editor.commands.setTextSelection(pos)
+    }
+    const clearImageOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !editor.isActive('embeddedImage')) return
+      editor.commands.setTextSelection(editor.state.selection.from)
+    }
+    document.addEventListener('pointerdown', clearImageSelection, true)
+    document.addEventListener('keydown', clearImageOnEscape, true)
+    return () => {
+      document.removeEventListener('pointerdown', clearImageSelection, true)
+      document.removeEventListener('keydown', clearImageOnEscape, true)
+    }
+  }, [editor])
   useEffect(() => {
     if (editor && initialContent !== null) editor.commands.setContent(initialContent, { emitUpdate: false })
   }, [editor, initialContent])
@@ -258,10 +367,6 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
   if (!editor) return <div className="rich-editor-area">Загрузка редактора...</div>
   void revision
   const selectedImage = editor.isActive('embeddedImage')
-  const updateImageWidth = (width: number) => {
-    setImageWidth(width)
-    if (selectedImage) editor.chain().focus().updateAttributes('embeddedImage', { width }).run()
-  }
   const inList = editor.isActive('listItem')
   const canIndent = inList && editor.can().sinkListItem('listItem')
   const canOutdent = inList && editor.can().liftListItem('listItem')
@@ -297,8 +402,8 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
     { label: 'К', title: 'Курсив', active: editor.isActive('italic'), run: () => editor.chain().focus().toggleItalic().run() },
     { label: 'Ч', title: 'Подчёркивание', active: editor.isActive('underline'), run: () => editor.chain().focus().toggleUnderline().run() },
     { label: 'З', title: 'Зачёркивание', active: editor.isActive('strike'), run: () => editor.chain().focus().toggleStrike().run() },
-    { label: '•', title: 'Маркированный список', active: editor.isActive('bulletList'), run: () => editor.chain().focus().toggleBulletList().run() },
-    { label: '1.', title: 'Нумерованный список', active: editor.isActive('orderedList'), run: () => editor.chain().focus().toggleOrderedList().run() },
+    { label: '•', title: 'Маркированный список (Ctrl+Shift+8)', active: editor.isActive('bulletList'), run: () => editor.chain().focus().toggleBulletList().run() },
+    { label: '1.', title: 'Нумерованный список (Ctrl+Shift+7)', active: editor.isActive('orderedList'), run: () => editor.chain().focus().toggleOrderedList().run() },
   ]
   return <div className="rich-editor" ref={editorContainerRef}>
     <div className="rich-toolbar-toggle-row">
@@ -328,7 +433,6 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
       <button type="button" title="Связать текущий пункт с другой заметкой" disabled={!currentListItem || !currentListItem.attrs.itemId || !onLinkItem}
         onMouseDown={event => event.preventDefault()} onClick={linkCurrentItem}>🔗 Связать пункт</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => fileRef.current?.click()}>🖼 Изображение</button>
-      {selectedImage && <label>Ширина <input type="range" min="80" max="900" value={Number(editor.getAttributes('embeddedImage').width) || imageWidth} onChange={event => updateImageWidth(Number(event.target.value))} /></label>}
       {selectedImage && <button type="button" onClick={() => editor.chain().focus().deleteSelection().run()}>Удалить изображение</button>}
       <label>Текст <input type="color" defaultValue="#ffffff" title="Цвет букв" onChange={event => editor.chain().focus().setColor(event.currentTarget.value).run()} /></label>
       <label>Выделение <input type="color" defaultValue="#ffe16b" title="Цвет фона текста" onChange={event => editor.chain().focus().setHighlight({ color: event.currentTarget.value }).run()} /></label>

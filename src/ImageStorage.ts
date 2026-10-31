@@ -12,7 +12,7 @@ function db(): Promise<IDBDatabase> {
     request.onerror = () => reject(request.error)
   })
 }
-export type GalleryImage = { id: string; caption: string }
+export type GalleryImage = { id: string; caption: string; width?: number; x?: number; y?: number; z?: number }
 export function imageRef(id: string) { return `${PREFIX}${id}` }
 export function imageId(src: string) { return src.startsWith(PREFIX) ? src.slice(PREFIX.length) : null }
 export async function saveImage(file: File): Promise<string> {

@@ -915,3 +915,123 @@
 .project-catalog-actions button:hover {border-color:var(--accent)}
 .project-catalog-actions button:disabled {opacity:.35;cursor:not-allowed}
 .project-catalog-loading {padding:12px;color:var(--text-muted)}
+
+/* v0.3 experimental: uncropped references and user-controlled gallery sizes */
+.image-gallery { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px; }
+.gallery-sortable { flex:0 1 auto; min-width:120px; max-width:100%; }
+.gallery-photo { width:240px; max-width:100%; box-sizing:border-box; }
+.gallery-photo-open img { width:100%; height:auto; max-height:65vh; object-fit:contain; }
+.gallery-size-label { display:flex; gap:8px; align-items:center; margin:7px 0; font-size:12px; }
+.gallery-size-label input { flex:1; min-width:45px; }
+.gallery-sortable[draggable="true"] { cursor:grab; }
+.canvas-undo-button { position:absolute; z-index:10; top:70px; left:15px; border:1px solid var(--border-color,#805a82); background:var(--field-bg,#32263c); color:var(--text-main,#fff); padding:8px 12px; border-radius:8px; cursor:pointer; }
+
+/* v0.3 experimental patch 03: direct image resizing, no sliders */
+.inotes-image-node { position:relative; display:block; max-width:100%; margin:9px 0; border:2px solid transparent; border-radius:9px; box-sizing:border-box; user-select:none; }
+.inotes-image-node img { display:block; width:100%; height:auto; max-width:100%; border-radius:7px; cursor:grab; }
+.inotes-image-node.inotes-image-selected, .inotes-image-node.inotes-image-resizing { border-color:var(--accent,#b788da); }
+.inotes-image-resize, .gallery-photo-resize { position:absolute; right:-7px; bottom:-7px; width:15px; height:15px; box-sizing:border-box; border:2px solid var(--accent,#b788da); border-radius:4px; background:#fff; cursor:nwse-resize; touch-action:none; z-index:5; }
+.inotes-image-node:not(.inotes-image-selected):not(.inotes-image-resizing) .inotes-image-resize { display:none; }
+.gallery-photo { position:relative; }
+.gallery-photo-selected { outline:2px solid var(--accent,#b788da); outline-offset:2px; }
+.gallery-photo-open { display:block; width:100%; }
+.gallery-photo-open img { display:block; width:100%; height:auto; object-fit:contain; max-height:none; user-select:none; }
+.gallery-photo-resize { cursor:nwse-resize; }
+
+/* Patch 04 — independent, draggable reference images. */
+.react-flow__node-note:has(.canvas-reference) { width: max-content; }
+.canvas-reference { position: relative; cursor: grab; line-height: 0; user-select: none; }
+.canvas-reference:active { cursor: grabbing; }
+.canvas-reference img { display: block; width: 100%; height: auto; pointer-events: none; border-radius: 3px; }
+.canvas-reference-selected { outline: 2px solid var(--accent, #c48bdf); outline-offset: 3px; }
+.canvas-reference-handle { position: absolute; right: -9px; bottom: -9px; width: 18px; height: 18px;
+  border: 2px solid white; border-radius: 4px; background: #b36cd3; cursor: nwse-resize; z-index: 3; touch-action: none; }
+.canvas-reference-size { position: absolute; bottom: 8px; left: 8px; padding: 4px 6px; background: #16121bd9;
+  color: white; font-size: 11px; line-height: 1; border-radius: 4px; opacity: 0; pointer-events: none; }
+.canvas-reference-selected .canvas-reference-size { opacity: 1; }
+.canvas-reference-missing { width: 260px; padding: 30px 12px; color: white; line-height: 1.4; background: #48374c; }
+.canvas-image-error { position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 100;
+  padding: 12px 16px; border-radius: 8px; background: #592d42; color: white; cursor: pointer; }
+
+/* Patch 05: свободная доска галереи вместо сетки / страницы */
+.image-gallery.gallery-free-board { position:relative; display:block; width:100%; min-height:440px; max-width:100%; overflow:auto; box-sizing:border-box; border:1px dashed var(--border-color,#805a82); border-radius:12px; background:repeating-linear-gradient(0deg,transparent 0 23px,#ffffff08 24px),repeating-linear-gradient(90deg,transparent 0 23px,#ffffff08 24px),#100f171c; }
+.gallery-board-photo { position:absolute; box-sizing:border-box; border:1px solid #ffffff44; border-radius:6px; padding:3px; background:#17131b; user-select:none; touch-action:none; cursor:grab; }
+.gallery-board-photo:active { cursor:grabbing; }
+.gallery-board-photo-selected { outline:2px solid var(--accent,#b788da); outline-offset:2px; }
+.gallery-board-image img { width:100%; height:auto; display:block; object-fit:contain; border-radius:3px; pointer-events:none; }
+.gallery-board-image { min-height:35px; }
+.gallery-board-resize { position:absolute; right:-7px; bottom:-7px; width:16px; height:16px; background:#fff; border:2px solid var(--accent,#b788da); border-radius:3px; cursor:nwse-resize; z-index:3; touch-action:none; }
+.gallery-board-actions { position:absolute; right:0; top:-32px; display:flex; gap:3px; background:#29202f; padding:3px; border-radius:6px; z-index:4; }
+.gallery-board-actions button { cursor:pointer; background:#473350; color:#fff; border:1px solid #735583; border-radius:4px; min-width:26px; height:24px; }
+.gallery-board-caption { display:block; width:100%; box-sizing:border-box; font-size:12px; background:#2b2330; color:#fff; border:1px solid #765d82; border-radius:3px; margin-top:3px; }
+.gallery-board-caption-label { font-size:11px; display:block; overflow-wrap:anywhere; }
+.gallery-free-board-preview { min-width:280px; }
+.gallery-free-board-preview .gallery-board-photo { cursor:default; }
+.gallery-editor .gallery-free-board { min-height:440px; }
+
+/* Patch 05b: galleries are wide reference boards, not narrow text cards. */
+.workspace .note-card.note-gallery,
+.note-card.note-gallery { width: 640px; max-width: none; }
+.note-card.note-gallery .note-content { padding: 10px; white-space: normal; overflow: hidden; }
+.note-card.note-gallery .note-title { padding: 12px 16px; }
+.note-card.note-gallery .image-gallery.gallery-free-board {
+  width: 100%; min-height: 0; height: 380px;
+  overflow: hidden; border: 0; border-radius: 8px;
+}
+.note-card.note-gallery.note-collapsed { width: 640px; }
+.gallery-editor .image-gallery.gallery-free-board {
+  width: 100%; min-height: 480px; overflow: hidden;
+}
+.gallery-free-board .gallery-board-photo { max-width: none; }
+
+/* Patch 06: edit gallery images on the React Flow canvas without opening the editor. */
+.note-card.note-gallery .gallery-inline-mode .gallery-board-photo { cursor: grab; }
+.note-card.note-gallery .gallery-inline-mode .gallery-board-photo:active { cursor: grabbing; }
+.note-card.note-gallery .gallery-inline-mode .gallery-board-actions { z-index: 2; }
+.note-card.note-gallery .gallery-inline-mode .gallery-board-caption-label { pointer-events: none; }
+
+/* Patch 07: eight drag handles on selected notes, with independently resizable width/height. */
+.react-flow__node-note:has(.note-card:not(.note-collapsed)) { min-width: 0; }
+.react-flow__node-note .note-card { box-sizing: border-box; }
+.react-flow__node-note[style*="width"] .note-card { width: 100%; max-width: none; }
+.react-flow__node-note[style*="height"] .note-card { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.react-flow__node-note[style*="height"] .note-card .note-content { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.react-flow__node-note[style*="height"] .note-card.note-gallery .note-content { overflow: hidden; }
+.react-flow__node-note[style*="height"] .note-card.note-gallery .image-gallery.gallery-free-board { height: 100%; }
+.react-flow__node-note .inotes-note-resize-handle { width: 10px; height: 10px; border: 2px solid var(--focus-color, #c48bdf); border-radius: 3px; background: #fff; z-index: 12; }
+.react-flow__node-note .inotes-note-resize-line { border-color: var(--focus-color, #c48bdf); }
+
+/* Patch 08: accessible image layer menu and opt-in arrangement. */
+.gallery-layer-menu { position:absolute; top:100%; right:0; z-index:100000; min-width:175px; display:flex; flex-direction:column; padding:5px; gap:3px; background:#29202f; border:1px solid #795f88; border-radius:8px; box-shadow:0 8px 24px #0008; }
+.gallery-layer-menu button { display:block; width:100%; text-align:left; color:#f7effb; background:transparent; border:0; padding:7px 9px; border-radius:5px; cursor:pointer; font-size:12px; }
+.gallery-layer-menu button:hover { background:#674877; }
+.gallery-board-toolbar { position:absolute; top:8px; right:8px; z-index:10000; pointer-events:auto; }
+.gallery-board-toolbar button { color:#f8effb; background:#493452; border:1px solid #795f88; border-radius:6px; font-size:11px; padding:5px 8px; cursor:pointer; opacity:.9; }
+.gallery-board-toolbar button:hover { background:#725184; opacity:1; }
+
+/* Hotfix 08a: standalone image nodes must not inherit note-card dimensions. */
+.workspace .react-flow__node-note:has(> .canvas-reference) {
+  width: max-content;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.workspace .react-flow__node-note:has(> .canvas-reference) .canvas-reference {
+  background: transparent;
+}
+.workspace .react-flow__node-note:has(> .canvas-reference) .canvas-reference img {
+  max-width: none;
+}
+
+/* Patch 09: canvas history toolbar */
+.canvas-history-actions { position: absolute; z-index: 16; top: 20px; right: 310px; display: flex; gap: 8px; }
+.canvas-history-actions button { padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border, #7777); background: var(--surface, #30283a); color: inherit; cursor: pointer; }
+.canvas-history-actions button:disabled { opacity: .4; cursor: default; }
+
+/* Hotfix 09a: avoid overlapping the Projects toolbar on narrower windows. */
+@media (max-width: 980px) {
+  .workspace .canvas-history-actions { display: none; }
+}
+
+/* Patch 10: file actions in the project manager. */

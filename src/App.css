@@ -1035,3 +1035,362 @@
 }
 
 /* Patch 10: file actions in the project manager. */
+
+/* v0.3.1: collapsed notes/galleries must not retain the expanded NodeResizer height. */
+.react-flow__node-note:has(.note-card.note-collapsed) {
+  height: auto !important;
+  min-height: 0 !important;
+}
+.react-flow__node-note[style*="height"] .note-card.note-collapsed {
+  height: auto !important;
+  min-height: 0 !important;
+  display: block;
+}
+.note-card.note-collapsed .note-title { margin-bottom: 0; }
+
+/* v0.3.1: native-looking project creation dialog, consistent with the current theme. */
+.inotes-project-modal-backdrop { position:fixed; inset:0; z-index:10020; display:flex; align-items:center; justify-content:center; padding:16px; background:#000a; }
+.inotes-project-modal { box-sizing:border-box; width:min(440px,100%); padding:24px; border-radius:16px; border:1px solid var(--border-color,#a476b6); background:var(--dialog-bg,#382e3b); color:var(--text-main,#fff); box-shadow:0 20px 70px #0008; display:grid; gap:14px; }
+.inotes-project-modal h2 { margin:0 0 4px; font-size:21px; }
+.inotes-project-modal label { font-size:14px; }
+.inotes-project-modal input { box-sizing:border-box; width:100%; padding:12px 14px; border-radius:9px; border:1px solid var(--border-color,#8a8095); background:var(--control-bg,#25252d); color:var(--text-main,#fff); font:inherit; }
+.inotes-project-modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
+.inotes-project-modal-actions button { padding:10px 16px; border-radius:9px; border:1px solid var(--border-color,#8a8095); background:var(--control-bg,#454650); color:var(--text-main,#fff); cursor:pointer; }
+.inotes-project-modal-actions button[type="submit"] { background:var(--accent,#75518b); color:#fff; }
+.inotes-project-modal-actions button:disabled { opacity:.55; cursor:not-allowed; }
+
+/* v0.3.6: internal links preserve the original text and image quality. */
+.rich-text-view [data-note-id] { color: #d8a5ff; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.rich-editor [data-note-id] { color: #d8a5ff; text-decoration: underline; text-underline-offset: 3px; }
+.inotes-text-link-targets { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.inotes-text-link-targets button { text-align: left; padding: 7px 10px; cursor: pointer; }
+
+/* v0.3.6 Part 3b — theme-aware link picker. Uses the active workspace theme. */
+.inotes-link-picker {
+  box-sizing: border-box; width: 100%; max-width: 100%; padding: 14px;
+  background: var(--dialog-bg, #382e3b);
+  border: 1px solid var(--border-color, #805a82);
+  border-radius: 14px; color: var(--text-main, #fff);
+  box-shadow: 0 12px 36px #0004;
+  display: flex; flex-direction: column; gap: 11px;
+}
+.inotes-link-picker-header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.inotes-link-picker-heading { font-size:14px; font-weight:700; display:inline-flex; align-items:center; gap:8px; }
+.inotes-link-picker-heading > span { color:var(--accent, #c48bdf); font-size:19px; }
+.inotes-link-picker-close {
+  width:28px; height:28px; border:1px solid var(--border-color, #805a82);
+  border-radius:8px; background:var(--control-bg, #493749);
+  color:var(--text-main, #fff); cursor:pointer; font-size:18px; line-height:1;
+}
+.inotes-link-picker-close:hover { background:var(--control-hover, #67516a); }
+.inotes-link-picker-search {
+  display:flex; align-items:center; gap:9px; padding:0 12px;
+  background:var(--field-bg, #251f28);
+  border:1px solid var(--border-color, #805a82);
+  border-radius:9px; color:var(--text-muted, #e3c8eb);
+}
+.inotes-link-picker-search:focus-within {
+  border-color:var(--focus-color, #dba6f0);
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--accent, #c48bdf) 22%, transparent);
+}
+.inotes-link-picker-search > span { font-size:22px; }
+.inotes-link-picker-search input {
+  flex:1; min-width:0; width:100%; box-sizing:border-box; padding:11px 0;
+  border:0; outline:0; background:transparent; color:var(--text-main, #fff); font:inherit;
+}
+.inotes-link-picker-search input::placeholder { color:var(--text-muted, #e3c8eb); opacity:.75; }
+.inotes-link-picker-caption {
+  display:flex; justify-content:space-between; color:var(--text-muted, #e3c8eb);
+  font-size:11px; font-weight:700; letter-spacing:.07em; padding:0 2px;
+}
+.inotes-link-picker-results {
+  max-height:244px; min-height:44px; overflow-y:auto; overscroll-behavior:contain;
+  display:flex; flex-direction:column; gap:6px; padding-right:3px;
+  scrollbar-width:thin; scrollbar-color:var(--border-color, #805a82) var(--field-bg, #251f28);
+}
+.inotes-link-picker-result {
+  display:flex; align-items:center; gap:11px; flex-shrink:0; width:100%;
+  box-sizing:border-box; text-align:left; padding:10px 12px;
+  border:1px solid var(--border-color, #805a82); border-radius:9px;
+  background:var(--control-bg, #493749); color:var(--text-main, #fff);
+  cursor:pointer; font:inherit; transition:background .12s ease, border-color .12s ease;
+}
+.inotes-link-picker-result:hover,.inotes-link-picker-result:focus-visible {
+  background:var(--control-hover, #67516a); border-color:var(--focus-color, #dba6f0); outline:none;
+}
+.inotes-link-picker-result-icon {
+  display:grid; place-items:center; width:30px; height:30px; flex:0 0 30px;
+  border-radius:7px; background:var(--field-bg, #251f28);
+  color:var(--accent, #c48bdf); font-size:17px;
+}
+.inotes-link-picker-result-title {
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; font-size:13px; font-weight:600;
+}
+.inotes-link-picker-result-arrow { color:var(--accent, #c48bdf); font-size:18px; }
+.inotes-link-picker-empty {
+  margin:0; padding:18px 12px; text-align:center; font-size:13px;
+  color:var(--text-muted, #e3c8eb);
+}
+.inotes-link-picker-hint {
+  margin:3px 0 9px; color:var(--text-muted, #e3c8eb); font-size:12px; line-height:1.5;
+}
+
+/* v0.3.6 Part 3 — opt-in visual link overlay */
+.internal-lines-toggle { position: absolute; bottom: 20px; right: 20px; top: auto; z-index: 16; border: 1px solid var(--border-color, #805a82); border-radius: 9px; padding: 9px 12px; background: var(--control-bg, #493749); color: var(--text-main, #fff); font: inherit; font-size: 12px; cursor: pointer; }
+.internal-lines-toggle:hover, .internal-lines-toggle.active { border-color: var(--focus-color, #dba6f0); background: var(--control-hover, #67516a); }
+
+/* v0.3.6 Part 3c — use active theme for focus, selection and dialog buttons. */
+.editor-window .inotes-link-picker-search:focus-within {
+  border-color: var(--focus-color, var(--border-color)) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-color, #a0a0a0) 24%, transparent) !important;
+}
+.editor-window .inotes-link-picker-search input:focus,
+.editor-window .inotes-link-picker-search input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.editor-window input:focus,
+.editor-window textarea:focus {
+  outline-color: var(--focus-color, var(--border-color));
+}
+.editor-window .editor-actions .cancel-button {
+  background: var(--control-bg, #494d56);
+  color: var(--text-main, #fff);
+  border: 1px solid var(--border-color, #7f8592);
+}
+.editor-window .editor-actions .save-button {
+  background: var(--control-hover, #606672);
+  color: var(--text-main, #fff);
+  border: 1px solid var(--focus-color, #d5d9e3);
+}
+.editor-window .editor-actions button:hover {
+  filter: brightness(1.1);
+}
+
+/* v0.3.6 Part 3d — history controls follow the selected workspace theme. */
+.workspace .canvas-history-actions button {
+  background: var(--control-bg, var(--field-bg, #34383f));
+  border: 1px solid var(--border-color, #737985);
+  color: var(--text-main, #f5f5f5);
+  box-shadow: none;
+  transition: background-color .15s ease, border-color .15s ease, opacity .15s ease;
+}
+.workspace .canvas-history-actions button:not(:disabled):hover {
+  background: var(--control-hover, var(--control-bg, #444951));
+  border-color: var(--focus-color, var(--border-color, #737985));
+}
+.workspace .canvas-history-actions button:focus-visible {
+  outline: 2px solid var(--focus-color, var(--border-color, #737985));
+  outline-offset: 2px;
+}
+.workspace .canvas-history-actions button:disabled {
+  background: var(--field-bg, #292d33);
+  color: var(--text-muted, #a9a9a9);
+  border-color: var(--border-color, #737985);
+  opacity: .5;
+  cursor: default;
+}
+
+/* v0.3.6 Part 3a: link cards (theme-aware, opt-in per linked phrase) */
+.rich-text-view [data-note-id][data-link-style="card"],
+.rich-editor-area [data-note-id][data-link-style="card"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4em;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: .42em .9em;
+  margin: .18em .08em;
+  border-radius: .65em;
+  border: 1px solid var(--border-color, #866b91);
+  background: var(--control-bg, #60476f);
+  color: var(--accent, #e3b7ff);
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+.rich-text-view [data-note-id][data-link-style="card"]::after,
+.rich-editor-area [data-note-id][data-link-style="card"]::after {
+  content: ' ↗';
+  white-space: nowrap;
+}
+.rich-text-view [data-note-id][data-link-style="card"]:hover {
+  background: var(--control-hover, #765887);
+  border-color: var(--focus-color, #c69be0);
+}
+
+/* v0.3.6 Part 3e — internal link line settings */
+.internal-visual-settings { margin: 0 0 22px; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--field-bg); color: var(--text-main); }
+.internal-visual-settings h3 { margin: 0 0 7px; }
+.internal-visual-settings p { color: var(--text-muted); font-size: 13px; }
+.internal-visual-settings .settings-fields { margin-top: 14px; }
+
+/* v0.3.7 Part 1: separate navigation controls */
+.navigation-history-actions {
+  position: absolute;
+  z-index: 20;
+  top: 66px;
+  left: 16px;
+  display: flex;
+  gap: 6px;
+}
+.navigation-history-actions button {
+  border: 1px solid var(--border-color, #7776);
+  background: var(--control-bg, #25252b);
+  color: var(--text-main, #fff);
+  border-radius: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+.navigation-history-actions button:disabled { opacity: .4; cursor: default; }
+.navigation-history-actions button:not(:disabled):hover { background: var(--control-hover, #444); }
+
+
+/* Infinite Notes v0.3.8 — cohesive UI polish.
+   Presentation-only: no changes to canvas coordinates, persistence or link logic. */
+.workspace {
+  --ui-radius: 12px;
+  --ui-motion: 150ms;
+}
+.workspace button,
+.workspace input,
+.workspace select,
+.workspace textarea {
+  font-family: inherit;
+}
+.workspace button {
+  transition: background-color var(--ui-motion) ease,
+              border-color var(--ui-motion) ease,
+              box-shadow var(--ui-motion) ease,
+              opacity var(--ui-motion) ease;
+}
+.workspace button:focus-visible,
+.workspace input:focus-visible,
+.workspace select:focus-visible,
+.workspace textarea:focus-visible,
+.workspace [role="button"]:focus-visible {
+  outline: 2px solid var(--focus-color, var(--accent, #b58bce));
+  outline-offset: 2px;
+}
+.workspace button:disabled {
+  cursor: not-allowed;
+}
+.workspace .navigation-history-actions,
+.workspace .canvas-history-actions {
+  gap: 6px;
+}
+.workspace .navigation-history-actions button,
+.workspace .canvas-history-actions button {
+  min-height: 34px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.workspace .navigation-history-actions button {
+  background: var(--control-bg, #493749);
+  border-color: var(--border-color, #805a82);
+  color: var(--text-main, #fff);
+}
+.workspace .navigation-history-actions button:not(:disabled):hover {
+  border-color: var(--focus-color, var(--accent, #b58bce));
+}
+.workspace .navigation-history-actions button:disabled {
+  opacity: .48;
+}
+.workspace .navigation-item {
+  transition: background-color var(--ui-motion) ease,
+              border-color var(--ui-motion) ease;
+}
+.workspace .navigation-item,
+.workspace .search-result,
+.workspace .inotes-link-picker-result {
+  overflow-wrap: anywhere;
+}
+.workspace .settings-dialog,
+.workspace .help-dialog,
+.workspace .project-home-dialog,
+.workspace .editor-window,
+.workspace .inotes-project-modal {
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+}
+.workspace .settings-dialog,
+.workspace .help-dialog,
+.workspace .project-home-dialog,
+.workspace .inotes-project-modal {
+  border-color: var(--border-color, #805a82);
+}
+.workspace .settings-tabs,
+.workspace .help-nav {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color, #805a82) transparent;
+}
+.workspace .settings-tabs button,
+.workspace .help-nav button {
+  transition: background-color var(--ui-motion) ease,
+              border-color var(--ui-motion) ease;
+}
+.workspace .rich-toolbar button,
+.workspace .rich-floating-toolbar button,
+.workspace .rich-toolbar-toggle {
+  transition: background-color var(--ui-motion) ease,
+              border-color var(--ui-motion) ease;
+}
+.workspace .rich-toolbar button:not(:disabled):hover,
+.workspace .rich-floating-toolbar button:not(:disabled):hover,
+.workspace .rich-toolbar-toggle:hover {
+  background: var(--control-hover, #805a82);
+}
+.workspace .editor-window .rich-toolbar {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.workspace .editor-actions button,
+.workspace .inotes-project-modal-actions button {
+  min-height: 36px;
+}
+.workspace .note-card {
+  transition: border-color var(--ui-motion) ease,
+              box-shadow var(--ui-motion) ease;
+}
+.workspace .note-card.note-selected {
+  box-shadow: 0 0 0 2px var(--focus-color, #b783cc), 0 8px 24px #0003;
+}
+@media (max-width: 900px) {
+  .workspace .navigation-history-actions button,
+  .workspace .canvas-history-actions button { padding: 6px 8px; font-size: 11px; }
+  .workspace .settings-dialog { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace button,
+  .workspace .navigation-item,
+  .workspace .search-result,
+  .workspace .note-card,
+  .workspace .settings-tabs button,
+  .workspace .help-nav button {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.rich-editor-loading { padding: 24px; text-align: center; color: var(--text-muted, #999); }
+
+/* Hotfix 3: in-app project deletion confirmation */
+.inotes-delete-overlay { position:fixed; inset:0; z-index:11000; background:rgba(8,8,14,.76); display:flex; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(5px); }
+.inotes-delete-dialog { width:min(440px,100%); box-sizing:border-box; padding:26px; border-radius:18px; border:1px solid rgba(193,157,210,.35); background:#292832; color:#f7f3fa; box-shadow:0 24px 90px rgba(0,0,0,.55); }
+.inotes-delete-eyebrow { color:#c9a4df; font-size:11px; font-weight:750; letter-spacing:.13em; }
+.inotes-delete-dialog h2 { margin:12px 0 16px; font-size:24px; }
+.inotes-delete-dialog p { line-height:1.6; overflow-wrap:anywhere; }
+.inotes-delete-warning { padding:12px 14px; border-radius:10px; background:rgba(245,174,101,.09); border:1px solid rgba(245,174,101,.24); color:#f1d6b9; font-size:14px; }
+.inotes-delete-error { color:#ffb9b9; }
+.inotes-delete-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px; flex-wrap:wrap; }
+.inotes-delete-actions button { padding:11px 16px; border-radius:10px; border:1px solid #686171; background:#42404d; color:white; font-weight:650; cursor:pointer; }
+.inotes-delete-actions button:focus-visible { outline:2px solid #d6b2ef; outline-offset:3px; }
+.inotes-delete-actions .inotes-delete-danger { background:#9c394c; border-color:#b84b60; }
+.inotes-delete-actions button:disabled { opacity:.55; cursor:wait; }

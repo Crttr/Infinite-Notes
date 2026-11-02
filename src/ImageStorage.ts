@@ -3,14 +3,21 @@ const DB_NAME = 'infinite-notes-images-v1'
 const STORE = 'images'
 const PREFIX = 'infinite-image:'
 const urls = new Map<string, string>()
+const pendingUrls = new Map<string, Promise<string | null>>()
 let dbPromise: Promise<IDBDatabase> | undefined
+let imageRevision = 0
+export function getImageRevision(): number { return imageRevision }
 function db(): Promise<IDBDatabase> {
-  return dbPromise ??= new Promise((resolve, reject) => {
+  return dbPromise ??= new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1)
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE) }
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); dbPromise = undefined }
+      resolve(request.result)
+    }
     request.onerror = () => reject(request.error)
-  })
+    request.onblocked = () => reject(new Error('База изображений занята другим окном Infinite Notes'))
+  }).catch(error => { dbPromise = undefined; throw error })
 }
 export type GalleryImage = { id: string; caption: string; width?: number; x?: number; y?: number; z?: number }
 export function imageRef(id: string) { return `${PREFIX}${id}` }
@@ -26,20 +33,31 @@ export async function saveImage(file: File): Promise<string> {
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
+  imageRevision++
   return id
 }
 export async function imageUrl(id: string): Promise<string | null> {
-  if (urls.has(id)) return urls.get(id)!
-  const database = await db()
-  const blob = await new Promise<Blob | undefined>((resolve, reject) => {
-    const req = database.transaction(STORE).objectStore(STORE).get(id)
-    req.onsuccess = () => resolve(req.result as Blob | undefined)
-    req.onerror = () => reject(req.error)
-  })
-  if (!blob) return null
-  const url = URL.createObjectURL(blob)
-  urls.set(id, url)
-  return url
+  const cached = urls.get(id)
+  if (cached) return cached
+  const pending = pendingUrls.get(id)
+  if (pending) return pending
+  const request = (async () => {
+    const database = await db()
+    const blob = await new Promise<Blob | undefined>((resolve, reject) => {
+      const req = database.transaction(STORE).objectStore(STORE).get(id)
+      req.onsuccess = () => resolve(req.result as Blob | undefined)
+      req.onerror = () => reject(req.error)
+    })
+    if (!blob) return null
+    const existing = urls.get(id)
+    if (existing) return existing
+    const url = URL.createObjectURL(blob)
+    urls.set(id, url)
+    return url
+  })()
+  pendingUrls.set(id, request)
+  try { return await request }
+  finally { pendingUrls.delete(id) }
 }
 export async function resolveImages(root: HTMLElement) {
   const elements = Array.from(root.querySelectorAll<HTMLImageElement>('img[data-image-id],img[src^="infinite-image:"]'))
@@ -98,6 +116,7 @@ export async function restoreStoredImages(images: { id: string; blob: Blob }[]):
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error || new Error('Ошибка записи изображений'))
   })
+  imageRevision++
   for (const { id } of images) {
     const url = urls.get(id)
     if (url) URL.revokeObjectURL(url)
@@ -115,6 +134,7 @@ export async function clearStoredImages(): Promise<void> {
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error)
   })
+  imageRevision++
   for (const url of urls.values()) URL.revokeObjectURL(url)
   urls.clear()
 }

@@ -1,14 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
-import { createPortal } from 'react-dom'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
-import { Extension, Node as TiptapNode } from '@tiptap/core'
-import { saveImage, imageRef, imageUrl, resolveImages, canonicalImages, hydratedImages } from './ImageStorage'
+import { Extension, Node as TiptapNode, Mark as TiptapMark } from '@tiptap/core'
+import { saveImage, imageUrl, canonicalImages, hydratedImages } from './ImageStorage'
 import { Plugin } from '@tiptap/pm/state'
+
+// Links are stored in rich HTML using stable note IDs, not titles or URLs.
+const InternalNoteLink = TiptapMark.create({
+  name: 'internalNoteLink',
+  inclusive: false,
+  addAttributes() { return { styleMode: {
+    default: 'inline',
+    parseHTML: element => element.getAttribute('data-link-style') === 'card' ? 'card' : 'inline',
+    renderHTML: attrs => attrs.styleMode === 'card' ? { 'data-link-style': 'card' } : {},
+  }, noteId: {
+    default: null,
+    parseHTML: element => element.getAttribute('data-note-id'),
+    renderHTML: attrs => attrs.noteId ? { 'data-note-id': attrs.noteId } : {},
+  } } },
+  parseHTML() { return [{ tag: 'span[data-note-id]' }] },
+  renderHTML({ HTMLAttributes }) { return ['span', { ...HTMLAttributes, class: 'inotes-internal-link' }, 0] },
+})
 
 const EmbeddedImage = TiptapNode.create({
   name: 'embeddedImage', group: 'block', atom: true, draggable: true,
@@ -133,97 +149,17 @@ const CollapsibleListItems = Extension.create({
   },
 })
 
-const ALLOWED = new Set(['B','STRONG','I','EM','U','S','STRIKE','UL','OL','LI','DIV','P','BR','SPAN','FONT','IMG'])
-const COLORS = /^(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\))$/
-export function sanitizeRichText(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const clean = (node: Node): Node | null => {
-    if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent ?? '')
-    if (node.nodeType !== Node.ELEMENT_NODE) return null
-    const source = node as HTMLElement
-    if (['SCRIPT','STYLE','SVG','IFRAME','OBJECT','TEMPLATE'].includes(source.tagName)) return null
-    const wrapper = document.createDocumentFragment()
-    const allowed = ALLOWED.has(source.tagName)
-    const dest = allowed ? document.createElement(source.tagName === 'FONT' ? 'span' : source.tagName.toLowerCase()) : wrapper
-    if (allowed && dest instanceof HTMLElement) {
-      if (source.tagName === 'IMG') {
-        const id = source.getAttribute('data-image-id') || (source.getAttribute('src') || '').replace(/^infinite-image:/, '')
-        if (!/^[a-f0-9-]{36}$/i.test(id)) return null
-        dest.setAttribute('data-image-id', id)
-        dest.setAttribute('src', imageRef(id))
-        dest.setAttribute('data-width', String(Math.min(900, Math.max(80, Number(source.getAttribute('data-width')) || 320))))
-        dest.style.width = `${Math.min(900, Math.max(80, Number(source.getAttribute('data-width')) || 320))}px`
-      }
-      if (source.tagName === 'LI') {
-        const id = source.getAttribute('data-item-id')
-        if (id && /^[a-zA-Z0-9_-]{1,100}$/.test(id)) dest.setAttribute('data-item-id', id)
-      }
-      if (source.tagName === 'LI' && source.getAttribute('data-collapsed') === 'true') {
-        dest.setAttribute('data-collapsed', 'true')
-      }
-      const color = source.tagName === 'FONT' ? source.getAttribute('color') : source.style.color
-      if (color && COLORS.test(color)) dest.style.color = color
-      const highlight = source.style.backgroundColor
-      if (highlight && COLORS.test(highlight)) dest.style.backgroundColor = highlight
-    }
-    for (const child of Array.from(source.childNodes)) {
-      const safe = clean(child)
-      if (safe) dest.appendChild(safe)
-    }
-    return dest
-  }
-  const result = document.createElement('div')
-  for (const child of Array.from(doc.body.childNodes)) {
-    const safe = clean(child)
-    if (safe) result.appendChild(safe)
-  }
-  return result.innerHTML
-}
+import { sanitizeRichText } from './RichTextView'
 
-export function RichTextView({ html, links = [], onFollow }: { html: string; links?: { itemId: string; targetId: string; targetTitle: string }[]; onFollow?: (id: string) => void }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [openItem, setOpenItem] = useState<string | null>(null)
-  const [zoomSrc, setZoomSrc] = useState<string | null>(null)
-  useEffect(() => {
-    const root = ref.current
-    if (!root) return
-    root.innerHTML = sanitizeRichText(html)
-    void resolveImages(root)
-    const grouped = new Map<string, typeof links>()
-    for (const link of links) grouped.set(link.itemId, [...(grouped.get(link.itemId) || []), link])
-    for (const [itemId, itemLinks] of grouped) {
-      const item = Array.from(root.querySelectorAll('li[data-item-id]')).find(el => el.getAttribute('data-item-id') === itemId)
-      if (!item) continue
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'item-link-badge nodrag nopan'
-      button.textContent = itemLinks.length > 1 ? `🔗 ${itemLinks.length}` : '🔗'
-      button.title = itemLinks.length > 1 ? `${itemLinks.length} связанные заметки` : `Связано: ${itemLinks[0].targetTitle}`
-      button.setAttribute('aria-label', `Показать связанные заметки (${itemLinks.length})`)
-      button.onclick = event => { event.preventDefault(); event.stopPropagation(); setOpenItem(old => old === itemId ? null : itemId) }
-      const anchor = Array.from(item.children).find(child => child.tagName === 'P') || item
-      anchor.appendChild(button)
-    }
-  }, [html, links])
-  const activeLinks = links.filter(link => link.itemId === openItem)
-  return <div className="rich-text-linked-container">
-    <div ref={ref} className="rich-text-view" onClick={event => {
-      if (event.target instanceof HTMLImageElement && event.target.dataset.imageId) { event.stopPropagation(); setZoomSrc(event.target.src) }
-    }} />
-    {zoomSrc && createPortal(<div className="gallery-lightbox" onClick={event => { event.stopPropagation(); setZoomSrc(null) }}><button type="button" className="gallery-lightbox-close" onClick={() => setZoomSrc(null)}>✕ Закрыть</button><img src={zoomSrc} alt="Увеличенное изображение" /></div>, document.body)}
-    {openItem && activeLinks.length > 0 && <div className="item-link-popover nodrag nopan" role="group" aria-label="Связанные заметки">
-      <div className="item-link-popover-title"><strong>Связанные заметки ({activeLinks.length})</strong><button type="button" onClick={event => { event.stopPropagation(); setOpenItem(null) }} aria-label="Закрыть">×</button></div>
-      {activeLinks.map(link => <button type="button" key={`${link.itemId}-${link.targetId}`} className="item-link-popover-entry" onClick={event => { event.stopPropagation(); setOpenItem(null); onFollow?.(link.targetId) }}>↗ {link.targetTitle}</button>)}
-    </div>}
-  </div>
-}
-
-type Props = { initialHtml: string; initialText: string; onChange: (html: string, plain: string) => void; onLinkItem?: (itemId: string, label: string) => void }
-export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem }: Props) {
+type Props = { targets?: { id: string; title: string }[]; initialHtml: string; initialText: string; onChange: (html: string, plain: string) => void }
+export function RichTextEditor({ targets = [], initialHtml, initialText, onChange }: Props) {
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
   const changeRef = useRef(onChange)
   changeRef.current = onChange
   const [revision, setRevision] = useState(0)
+  const [linkRange, setLinkRange] = useState<{ from: number; to: number } | null>(null)
+  const [linkSearch, setLinkSearch] = useState('')
+  const [linkEditing, setLinkEditing] = useState(false)
   const [initialContent, setInitialContent] = useState<string | null>(null)
   const initialValues = useRef({ initialHtml, initialText })
   const [imageError, setImageError] = useState('')
@@ -259,7 +195,7 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
     return () => { window.removeEventListener('resize', refresh); document.removeEventListener('scroll', refresh, true) }
   })
   const editor = useEditor({
-    extensions: [StarterKit, Underline, TextStyle, Color, Highlight.configure({ multicolor: true }), CollapsibleListItems, EmbeddedImage],
+    extensions: [StarterKit, Underline, TextStyle, Color, Highlight.configure({ multicolor: true }), CollapsibleListItems, EmbeddedImage, InternalNoteLink],
     content: '',
     immediatelyRender: false,
     editorProps: {
@@ -380,12 +316,82 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
   const currentListItem = listItemLevel === undefined ? null : $from.node(listItemLevel)
   const hasChildren = !!currentListItem && Array.from({ length: currentListItem.childCount }, (_, i) => currentListItem.child(i)).some(node => node.type.name === 'bulletList' || node.type.name === 'orderedList')
   const isCollapsed = !!currentListItem?.attrs.collapsed
-  const linkCurrentItem = () => {
-    if (!currentListItem || listItemLevel === undefined || !onLinkItem) return
-    const id = currentListItem.attrs.itemId as string | null
-    if (!id) return
-    const label = currentListItem.firstChild?.textContent?.trim() || 'Пункт без названия'
-    onLinkItem(id, label)
+  const linkSelectedText = () => {
+    const { from, to, empty } = editor.state.selection
+    if (empty || from === to) return
+    setLinkEditing(false)
+    setLinkRange({ from, to })
+    setLinkSearch('')
+  }
+  // Resolve a link even when the whole linked phrase is selected. ProseMirror
+  // marks() at the end of a selection can refer to the NEXT text node.
+  const getSelectedInternalLink = () => {
+    const { from, to, empty } = editor.state.selection
+    const type = editor.schema.marks.internalNoteLink
+    if (!type) return null
+    const matches: { from: number; to: number; noteId: string }[] = []
+    const scanFrom = empty ? Math.max(0, from - 1) : from
+    const scanTo = empty ? Math.min(editor.state.doc.content.size, to + 1) : to
+    editor.state.doc.nodesBetween(scanFrom, scanTo, (node, pos) => {
+      if (!node.isText) return
+      const mark = node.marks.find(m => m.type === type)
+      if (!mark) return
+      const left = Math.max(pos, scanFrom)
+      const right = Math.min(pos + node.nodeSize, scanTo)
+      if (right > left) matches.push({ from: pos, to: pos + node.nodeSize, noteId: String(mark.attrs.noteId) })
+    })
+    if (!matches.length) return null
+    const target = matches[0].noteId
+    // Do not silently change one of several different links in a selection.
+    if (matches.some(match => match.noteId !== target)) return null
+    if (!empty && (matches[0].from > from || matches[matches.length - 1].to < to)) return null
+    let linkFrom = Math.min(...matches.map(m => m.from))
+    let linkTo = Math.max(...matches.map(m => m.to))
+    // Expand to adjacent nodes sharing the same link mark.
+    editor.state.doc.nodesBetween(Math.max(0, linkFrom - 1), Math.min(editor.state.doc.content.size, linkTo + 1), (node, pos) => {
+      if (!node.isText || !node.marks.some(m => m.type === type && String(m.attrs.noteId) === target)) return
+      if (pos + node.nodeSize === linkFrom) linkFrom = pos
+      if (pos === linkTo) linkTo = pos + node.nodeSize
+    })
+    return { from: linkFrom, to: linkTo }
+  }
+  const editExistingTextLink = () => {
+    const range = getSelectedInternalLink()
+    if (!range) return
+    setLinkEditing(true)
+    setLinkRange(range)
+    setLinkSearch('')
+  }
+  const applyTextLink = (noteId: string) => {
+    if (!linkRange) return
+    const { from, to } = linkRange
+    if (to > editor.state.doc.content.size) { setLinkRange(null); return }
+    const oldLink = editor.state.doc.resolve(from).marks().find(m => m.type === editor.schema.marks.internalNoteLink)
+    const mark = editor.schema.marks.internalNoteLink.create({ noteId, styleMode: linkEditing && oldLink?.attrs.styleMode === 'card' ? 'card' : 'inline' })
+    editor.view.dispatch(editor.state.tr.removeMark(from, to, editor.schema.marks.internalNoteLink).addMark(from, to, mark))
+    setLinkRange(null)
+    setLinkEditing(false)
+  }
+  const selectedLinkMode = () => {
+    const range = getSelectedInternalLink()
+    if (!range) return null
+    let mode: string | null = null
+    editor.state.doc.nodesBetween(range.from, range.to, node => {
+      if (!node.isText) return
+      const mark = node.marks.find(m => m.type === editor.schema.marks.internalNoteLink)
+      if (mark && mode === null) mode = mark.attrs.styleMode === 'card' ? 'card' : 'inline'
+    })
+    return mode
+  }
+  const toggleLinkCard = () => {
+    const range = getSelectedInternalLink()
+    if (!range) return
+    const { from, to } = range
+    const type = editor.schema.marks.internalNoteLink
+    const existing = editor.state.doc.resolve(from + 1).marks().find(m => m.type === type)
+    if (!existing?.attrs.noteId) return
+    const next = existing.attrs.styleMode === 'card' ? 'inline' : 'card'
+    editor.view.dispatch(editor.state.tr.removeMark(from, to, type).addMark(from, to, type.create({ ...existing.attrs, styleMode: next })))
   }
   const toggleCollapse = () => {
     if (listItemLevel === undefined || !hasChildren) return
@@ -418,6 +424,28 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
       event.target.value = ''
     }} />
     {imageError && <p className="image-error" role="alert">{imageError}</p>}
+    {linkRange && <section className="inotes-link-picker nodrag nopan" aria-label="Выбор целевой заметки">
+      <div className="inotes-link-picker-header">
+        <span className="inotes-link-picker-heading"><span aria-hidden="true">↗</span> {linkEditing ? 'Изменить цель ссылки' : 'Ссылка на заметку'}</span>
+        <button type="button" className="inotes-link-picker-close" aria-label="Закрыть выбор заметки" onClick={() => setLinkRange(null)}>×</button>
+      </div>
+      <label className="inotes-link-picker-search">
+        <span aria-hidden="true">⌕</span>
+        <input autoFocus aria-label="Поиск заметки для ссылки" placeholder="Поиск по названию..." value={linkSearch} onChange={e => setLinkSearch(e.target.value)} />
+      </label>
+      {linkEditing && <p className="inotes-link-picker-hint">Выбери новую заметку — текст ссылки останется прежним.</p>}
+      <div className="inotes-link-picker-caption">ДОСТУПНЫЕ ОБЪЕКТЫ <span>{targets.filter(t => t.title.toLocaleLowerCase().includes(linkSearch.trim().toLocaleLowerCase())).length}</span></div>
+      <div className="inotes-link-picker-results" role="list" aria-label="Найденные заметки">
+        {targets.filter(t => t.title.toLocaleLowerCase().includes(linkSearch.trim().toLocaleLowerCase())).map(t =>
+          <button key={t.id} className="inotes-link-picker-result" type="button" onClick={() => applyTextLink(t.id)}>
+            <span className="inotes-link-picker-result-icon" aria-hidden="true">▤</span>
+            <span className="inotes-link-picker-result-title">{t.title || 'Без названия'}</span>
+            <span className="inotes-link-picker-result-arrow" aria-hidden="true">↗</span>
+          </button>)}
+        {targets.every(t => !t.title.toLocaleLowerCase().includes(linkSearch.trim().toLocaleLowerCase())) &&
+          <p className="inotes-link-picker-empty">Ничего не найдено. Попробуй другое название.</p>}
+      </div>
+    </section>}
     {toolbarVisible && <div className="rich-toolbar" aria-label="Форматирование текста">
       {tools.map(tool => <button key={tool.title} type="button" title={tool.title} aria-pressed={tool.active} className={tool.active ? 'rich-tool-active' : ''} onMouseDown={event => event.preventDefault()} onClick={tool.run}>{tool.label}</button>)}
       <button type="button" title="Сделать подпункт (Tab)" aria-label="Увеличить вложенность" aria-pressed={isNested} className={isNested ? 'rich-tool-active' : ''} disabled={!canIndent}
@@ -430,8 +458,16 @@ export function RichTextEditor({ initialHtml, initialText, onChange, onLinkItem 
         aria-pressed={isCollapsed} className={isCollapsed ? 'rich-tool-active' : ''}
         disabled={!hasChildren} onMouseDown={event => event.preventDefault()}
         onClick={toggleCollapse}>{isCollapsed ? '▸ Развернуть' : '▾ Свернуть'}</button>
-      <button type="button" title="Связать текущий пункт с другой заметкой" disabled={!currentListItem || !currentListItem.attrs.itemId || !onLinkItem}
-        onMouseDown={event => event.preventDefault()} onClick={linkCurrentItem}>🔗 Связать пункт</button>
+      <button type="button" title="Создать внутреннюю ссылку из выделенного текста" disabled={editor.state.selection.empty || targets.length === 0}
+        onMouseDown={event => event.preventDefault()} onClick={linkSelectedText}>🔗 Связать текст</button>
+      <button type="button" title="Изменить цель ссылки под курсором"
+        disabled={!getSelectedInternalLink()}
+        onMouseDown={event => event.preventDefault()} onClick={editExistingTextLink}>✎ Изменить ссылку</button>
+      <button type="button" title="Переключить отображение ссылки: карточка или обычный текст"
+        disabled={!getSelectedInternalLink()}
+        onMouseDown={event => event.preventDefault()} onClick={toggleLinkCard}>{selectedLinkMode() === 'card' ? '↗ Обычная ссылка' : '▣ Ссылка-карточка'}</button>
+      <button type="button" title="Удалить внутреннюю ссылку с выделенного текста" disabled={!editor.isActive('internalNoteLink')}
+        onMouseDown={event => event.preventDefault()} onClick={() => editor.chain().focus().unsetMark('internalNoteLink').run()}>Убрать ссылку</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => fileRef.current?.click()}>🖼 Изображение</button>
       {selectedImage && <button type="button" onClick={() => editor.chain().focus().deleteSelection().run()}>Удалить изображение</button>}
       <label>Текст <input type="color" defaultValue="#ffffff" title="Цвет букв" onChange={event => editor.chain().focus().setColor(event.currentTarget.value).run()} /></label>

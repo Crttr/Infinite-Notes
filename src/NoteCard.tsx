@@ -1,6 +1,6 @@
 
 import { useEffect } from 'react'
-import { RichTextView } from './RichText'
+import { RichTextView } from './RichTextView'
 import { ImageGallery } from './ImageGallery'
 import { CanvasReference } from './CanvasReference'
 import type { GalleryImage } from './ImageStorage'

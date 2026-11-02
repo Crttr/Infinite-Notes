@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ComponentProps, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -15,15 +15,18 @@ import {
   type EdgeMouseHandler,
 } from '@xyflow/react'
 
-import { NoteCard, type NoteNode } from './NoteCard'
+import type { NoteNode } from './NoteCard'
+// Load canvas node rendering separately from the initial application shell.
+const NoteCard = lazy(() => import('./NoteCard').then(module => ({ default: module.NoteCard })))
 import '@xyflow/react/dist/style.css'
 import './App.css'
 import { SmartEdge } from './SmartEdge'
-import { RichTextEditor } from './RichText'
+import { CardAnchoredEdge } from './CardAnchoredEdge'
+const RichTextEditor = lazy(() => import('./RichText').then(module => ({ default: module.RichTextEditor })))
 import { ImageGallery } from './ImageGallery'
 import { saveImage, clearStoredImages, type GalleryImage } from './ImageStorage'
 import { exportBackup, inspectBackup, importBackup, downloadBackup, type BackupPreview, BACKUP_KEYS } from './Backup'
-import { ACTIVE_PROJECT_KEY, createProject, listProjects, putProject, removeProject, type LocalProject } from './ProjectStore'
+import { ACTIVE_PROJECT_KEY, createProject, listProjects, getProject, putProject, removeProject, type ProjectSummary } from './ProjectStore'
 
 // Tauri 2 exposes its command bridge when withGlobalTauri is enabled.
 // Browser preview keeps the existing download-based export as a fallback.
@@ -75,6 +78,41 @@ function applyLineSettings(edge: Edge, settings: LineSettings): Edge {
 }
 
 type ThemeId = 'purple' | 'midnight' | 'forest' | 'sunset' | 'light' | 'graphite'
+type InternalLinkSide = 'auto' | 'top' | 'right' | 'bottom' | 'left'
+type InternalVisualSettings = {
+  sourceSide: InternalLinkSide
+  targetSide: InternalLinkSide
+  pattern: LinePattern
+  color: string
+  themeColor: boolean
+  width: number
+}
+const INTERNAL_VISUAL_KEY = 'infinite-notes-internal-visual-settings-v1'
+const DEFAULT_INTERNAL_VISUAL: InternalVisualSettings = {
+  sourceSide: 'auto', targetSide: 'auto', pattern: 'dashed',
+  color: '#c48bdf', themeColor: true, width: 1.8,
+}
+const INTERNAL_SIDE_OPTIONS: { value: InternalLinkSide; label: string }[] = [
+  { value: 'auto', label: 'Автоматически' },
+  { value: 'top', label: 'Сверху' },
+  { value: 'right', label: 'Справа' },
+  { value: 'bottom', label: 'Снизу' },
+  { value: 'left', label: 'Слева' },
+]
+function readInternalVisualSettings(): InternalVisualSettings {
+  try {
+    const raw = JSON.parse(localStorage.getItem(INTERNAL_VISUAL_KEY) || '{}') as Partial<InternalVisualSettings>
+    const sides: InternalLinkSide[] = ['auto', 'top', 'right', 'bottom', 'left']
+    return {
+      sourceSide: sides.includes(raw.sourceSide as InternalLinkSide) ? raw.sourceSide! : 'auto',
+      targetSide: sides.includes(raw.targetSide as InternalLinkSide) ? raw.targetSide! : 'auto',
+      pattern: ['solid', 'dashed', 'dotted'].includes(raw.pattern || '') ? raw.pattern! : 'dashed',
+      color: /^#[0-9a-fA-F]{6}$/.test(raw.color || '') ? raw.color! : DEFAULT_INTERNAL_VISUAL.color,
+      themeColor: typeof raw.themeColor === 'boolean' ? raw.themeColor : true,
+      width: typeof raw.width === 'number' && raw.width >= 1 && raw.width <= 5 ? raw.width : 1.8,
+    }
+  } catch { return { ...DEFAULT_INTERNAL_VISUAL } }
+}
 const THEME_KEY = 'infinite-notes-theme-v1'
 const THEMES: { id: ThemeId; label: string; description: string; preview: string; accent: string }[] = [
   { id: 'purple', label: 'Infinite Purple', description: 'Оригинальная фиолетовая', preview: 'linear-gradient(160deg,#252329,#382c39 45%,#793b69)', accent: '#c48bdf' },
@@ -96,9 +134,14 @@ const EDGES_KEY = 'infinite-notes-edges-v1'
 
 const edgeTypes = {
   smart: SmartEdge,
+  internalCard: CardAnchoredEdge,
 }
 const nodeTypes = {
-  note: NoteCard,
+  note: (props: ComponentProps<typeof NoteCard>) => (
+    <Suspense fallback={<div className="note-card" aria-label="Загрузка заметки">Загрузка заметки…</div>}>
+      <NoteCard {...props} />
+    </Suspense>
+  ),
 }
 
 type ConnectionSides = {
@@ -230,6 +273,8 @@ function Workspace() {
   const [canvasImageError, setCanvasImageError] = useState('')
   const [nodes, setNodes, onNodesChange] =
     useNodesState<NoteNode>(loadNotes())
+  // Visual links are derived from note HTML and never persisted as ordinary edges.
+  const [showInternalLinkLines, setShowInternalLinkLines] = useState(false)
 
   const [edges, setEdges, onEdgesChange] =
     useEdgesState<Edge>(
@@ -285,25 +330,43 @@ function Workspace() {
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [homeOpen, setHomeOpen] = useState(true)
   const [projectName, setProjectName] = useState(() => localStorage.getItem('infinite-notes-project-name') || 'Моё пространство')
-  const [projects, setProjects] = useState<LocalProject[]>([])
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [projectsReady, setProjectsReady] = useState(false)
   const projectOperationRef = useRef(false)
   const projectRevisionRef = useRef(0)
   const [projectBusy, setProjectBusy] = useState(false)
   const [projectError, setProjectError] = useState('')
   const projectInputRef = useRef<HTMLInputElement>(null)
-  const [renameTarget, setRenameTarget] = useState<LocalProject | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null)
+  const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
+  const [createProjectName, setCreateProjectName] = useState('Новый проект')
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpSection, setHelpSection] = useState<'start' | 'editor' | 'links' | 'images' | 'backup' | 'controls' | 'about'>('start')
-  const [settingsTab, setSettingsTab] = useState<'appearance' | 'connections' | 'backup'>('appearance')
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'connections' | 'backup' | 'controls'>('appearance')
+  // v0.3.4: control preferences are local to this installation, not project data.
+  // Independent bindings: mouse buttons and keyboard-assisted pan can coexist.
+  const [panMiddle, setPanMiddle] = useState(() => localStorage.getItem('infinite-notes-pan-middle-v2') !== 'false')
+  const [panRight, setPanRight] = useState(() => localStorage.getItem('infinite-notes-pan-right-v2') === 'true')
+  const [panKey, setPanKey] = useState(() => localStorage.getItem('infinite-notes-pan-key-v2') ?? 'Space')
+  const [capturingPan, setCapturingPan] = useState(false)
+  const [homeShortcut, setHomeShortcut] = useState(() => localStorage.getItem('infinite-notes-home-key-v1') || 'Home')
+  const [capturingHome, setCapturingHome] = useState(false)
+  useEffect(() => { localStorage.setItem('infinite-notes-pan-middle-v2', String(panMiddle)) }, [panMiddle])
+  useEffect(() => { localStorage.setItem('infinite-notes-pan-right-v2', String(panRight)) }, [panRight])
+  useEffect(() => { localStorage.setItem('infinite-notes-pan-key-v2', panKey) }, [panKey])
+  useEffect(() => { localStorage.setItem('infinite-notes-home-key-v1', homeShortcut) }, [homeShortcut])
   const [backupFile, setBackupFile] = useState<File | null>(null)
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null)
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
   const [themeId, setThemeId] = useState<ThemeId>(savedTheme)
+  const [internalVisual, setInternalVisual] = useState<InternalVisualSettings>(readInternalVisualSettings)
+  useEffect(() => { localStorage.setItem(INTERNAL_VISUAL_KEY, JSON.stringify(internalVisual)) }, [internalVisual])
+
   useEffect(() => { localStorage.setItem(THEME_KEY, themeId) }, [themeId])
 
   const [lineEditorId, setLineEditorId] = useState<string | null>(null)
@@ -343,51 +406,46 @@ function Workspace() {
         typeof link.itemLabel === 'string') : []
     } catch { return [] }
   })
-  const [itemLinkDraft, setItemLinkDraft] = useState<{ itemId: string; itemLabel: string } | null>(null)
-  const [itemLinkQuery, setItemLinkQuery] = useState('')
-  const [itemLinkFeedback, setItemLinkFeedback] = useState('')
-  const [pendingItemLinks, setPendingItemLinks] = useState<ItemLink[]>([])
-  const [removedItemLinkIds, setRemovedItemLinkIds] = useState<string[]>([])
   useEffect(() => { localStorage.setItem(ITEM_LINKS_KEY, JSON.stringify(itemLinks)) }, [itemLinks])
 
 
-  const { setViewport, setCenter, screenToFlowPosition } = useReactFlow()
+  const { setViewport, setCenter, getViewport, screenToFlowPosition } = useReactFlow()
 
-  // Сохраняем заметки
+  // Avoid synchronous JSON serialization / localStorage writes for every pointer move.
+  // Changes are saved shortly after the latest node update, including drag end.
   useEffect(() => {
-    const savedNodes = nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: node.position,
-      style: node.style,
-      data: {
-        title: node.data.title,
-        content: node.data.content,
-        richHtml: node.data.richHtml,
-        kind: node.data.kind,
-        gallery: node.data.gallery,
-        collapsed: node.data.collapsed ?? false,
-        canvasImageId: node.data.canvasImageId,
-        canvasImageWidth: node.data.canvasImageWidth,
-      },
-    }))
-
-    localStorage.setItem(
-      NOTES_KEY,
-      JSON.stringify(savedNodes)
-    )
+    const timer = window.setTimeout(() => {
+      const savedNodes = nodes.map((node) => ({
+        id: node.id, type: node.type, position: node.position, style: node.style,
+        data: {
+          title: node.data.title, content: node.data.content, richHtml: node.data.richHtml,
+          kind: node.data.kind, gallery: node.data.gallery,
+          collapsed: node.data.collapsed ?? false,
+          canvasImageId: node.data.canvasImageId,
+          canvasImageWidth: node.data.canvasImageWidth,
+        },
+      }))
+      try { localStorage.setItem(NOTES_KEY, JSON.stringify(savedNodes)) }
+      catch (error) { console.error('Infinite Notes: не удалось сохранить заметки', error) }
+    }, 350)
+    return () => window.clearTimeout(timer)
   }, [nodes])
 
   useEffect(() => { localStorage.setItem('infinite-notes-line-defaults-v1', JSON.stringify(defaultLine)) }, [defaultLine])
 
   // Сохраняем связи
   useEffect(() => {
-    localStorage.setItem(
-      EDGES_KEY,
-      JSON.stringify(edges)
-    )
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(EDGES_KEY, JSON.stringify(edges)) }
+      catch (error) { console.error('Infinite Notes: не удалось сохранить связи', error) }
+    }, 350)
+    return () => window.clearTimeout(timer)
   }, [edges])
 
+
+  // Индексируем узлы один раз вместо поиска по всему массиву для каждого ребра.
+  // Особенно заметно на больших холстах с большим количеством связей.
+  const nodesById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes])
 
   // Перестраиваем связи при перемещении заметок
   useEffect(() => {
@@ -398,20 +456,12 @@ function Workspace() {
         if (edge.data?.connectionMode === 'manual') {
           return edge
         }
-        const source = nodes.find(
-          (node) => node.id === edge.source
-        )
-
-        const target = nodes.find(
-          (node) => node.id === edge.target
-        )
+        const source = nodesById.get(edge.source)
+        const target = nodesById.get(edge.target)
 
         if (!source || !target) {
           return edge
         }
-
-        // Ручные подключения сохраняют выбранные стороны.
-        if (edge.data?.connectionMode === 'manual') return edge
 
         const sides = getConnectionSides(source, target)
 
@@ -436,7 +486,7 @@ function Workspace() {
 
       return changed ? updated : current
     })
-  }, [nodes, setEdges])
+  }, [nodesById, setEdges])
 
 
   // Сворачиваем или разворачиваем заметку, не меняя её содержимое.
@@ -495,6 +545,91 @@ function Workspace() {
     if (added.length) { rememberCanvas(); setNodes(current => [...current, ...added]) }
     setMenu(null)
   }
+  // v0.3.3: Import screenshots and dropped image files into the canvas or a gallery.
+  // Capture listeners keep Tauri/WebView's default file navigation from replacing the app.
+  useEffect(() => {
+    const isImage = (file: File) => /^image\/(png|jpeg|webp|gif)$/i.test(file.type) ||
+      (!file.type && /\.(png|jpe?g|webp|gif)$/i.test(file.name))
+    const modalOpen = homeOpen || settingsOpen || helpOpen || Boolean(renameTarget) ||
+      createProjectOpen || projectBusy || backupBusy || Boolean(lineEditorId) || searchOpen
+    const editableText = (target: EventTarget | null) =>
+      target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable], [role="textbox"]'))
+    const galleryAt = (target: EventTarget | null): string | null => {
+      if (!(target instanceof Element)) return null
+      const container = target.closest('.react-flow__node[data-id]')
+      const id = container?.getAttribute('data-id')
+      return id && nodes.some(node => node.id === id && node.data.kind === 'gallery') ? id : null
+    }
+    const importFiles = async (files: File[], point?: { x: number; y: number }, galleryId?: string | null) => {
+      const supported = files.filter(isImage)
+      if (!supported.length) return
+      setCanvasImageError('')
+      setGalleryError('')
+      const saved: { id: string; name: string }[] = []
+      for (const file of supported) {
+        try { saved.push({ id: await saveImage(file), name: file.name || 'Скриншот.png' }) }
+        catch (error) {
+          const message = error instanceof Error ? error.message : 'Ошибка загрузки изображения'
+          if (editingId && draftKind === 'gallery') setGalleryError(message)
+          else setCanvasImageError(message)
+        }
+      }
+      if (!saved.length) return
+      const images: GalleryImage[] = saved.map(({ id }) => ({ id, caption: '' }))
+      if (editingId && draftKind === 'gallery') {
+        setDraftGallery(current => [...current, ...images])
+      } else if (galleryId) {
+        rememberCanvas()
+        setNodes(current => current.map(node => node.id === galleryId && node.data.kind === 'gallery'
+          ? { ...node, data: { ...node.data, gallery: [...(node.data.gallery || []), ...images] } }
+          : node))
+      } else {
+        const origin = screenToFlowPosition(point ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 })
+        const added: NoteNode[] = saved.map(({ id, name }, index) => ({
+          id: crypto.randomUUID(), type: 'note',
+          position: { x: origin.x + index * 28, y: origin.y + index * 28 },
+          data: { title: name, content: '', kind: 'canvasImage', canvasImageId: id, canvasImageWidth: 320 },
+        }))
+        rememberCanvas()
+        setNodes(current => [...current, ...added])
+      }
+    }
+    const pasteImage = (event: ClipboardEvent) => {
+      if (modalOpen || editableText(event.target) || !event.clipboardData) return
+      if (editingId && draftKind !== 'gallery') return // Tiptap owns clipboard in text notes.
+      const files = Array.from(event.clipboardData.items)
+        .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+        .map(item => item.getAsFile()).filter((file): file is File => file !== null)
+      if (!files.length) return // v0.3.2 custom clipboard payload is handled separately.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      void importFiles(files, undefined, galleryAt(event.target))
+    }
+    const dragOver = (event: DragEvent) => {
+      if (modalOpen || !event.dataTransfer || !Array.from(event.dataTransfer.types).includes('Files')) return
+      if (editingId && draftKind !== 'gallery') return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+    const drop = (event: DragEvent) => {
+      if (modalOpen || !event.dataTransfer?.files.length) return
+      if (editingId && draftKind !== 'gallery') return
+      const files = Array.from(event.dataTransfer.files)
+      event.preventDefault()
+      event.stopPropagation()
+      void importFiles(files, { x: event.clientX, y: event.clientY }, galleryAt(event.target))
+    }
+    window.addEventListener('paste', pasteImage, true)
+    window.addEventListener('dragover', dragOver, true)
+    window.addEventListener('drop', drop, true)
+    return () => {
+      window.removeEventListener('paste', pasteImage, true)
+      window.removeEventListener('dragover', dragOver, true)
+      window.removeEventListener('drop', drop, true)
+    }
+  }, [nodes, editingId, draftKind, homeOpen, settingsOpen, helpOpen, renameTarget,
+      createProjectOpen, projectBusy, backupBusy, lineEditorId, searchOpen, screenToFlowPosition])
+
   const resizeCanvasImage = useCallback((id: string, width: number) => {
     rememberCanvas()
     setNodes(current => current.map(node => node.id === id
@@ -675,9 +810,6 @@ function Workspace() {
     setDraftKind(note.data.kind || 'note')
     setGalleryError('')
     setEditingId(note.id)
-    setPendingItemLinks([])
-    setRemovedItemLinkIds([])
-    setItemLinkDraft(null)
     setMenu(null)
   }
 
@@ -715,12 +847,8 @@ function Workspace() {
     ).map(item => item.getAttribute('data-item-id')))
     setItemLinks(current => [
       ...current.filter(link => link.sourceNoteId !== editingId ||
-        (itemIds.has(link.itemId) && !removedItemLinkIds.includes(link.id))),
-      ...pendingItemLinks.filter(link => itemIds.has(link.itemId)),
+        (itemIds.has(link.itemId))),
     ])
-    setPendingItemLinks([])
-    setRemovedItemLinkIds([])
-    setItemLinkDraft(null)
     setEditingId(null)
   }
 
@@ -762,7 +890,9 @@ function Workspace() {
   const editedSettings = editedLine ? lineSettings(editedLine) : DEFAULT_LINE
 
   // Always use the latest committed canvas state for a history entry.
-  currentCanvas.current = { nodes: structuredClone(nodes), edges: structuredClone(edges), links: structuredClone(itemLinks) }
+  // Performance: never deep-clone the entire canvas during a drag frame.
+  // snapshot() performs the deep clone only when an undo entry is actually needed.
+  currentCanvas.current = { nodes, edges, links: itemLinks }
 
   // Удаляем заметку и все её связи
   const deleteNote = () => {
@@ -800,6 +930,44 @@ function Workspace() {
     setLinkSource(null)
   }
 
+  // Home is configurable. Never intercept shortcuts while typing or in a dialog.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (capturingPan) {
+        if (event.key === 'Escape') { event.preventDefault(); setCapturingPan(false); return }
+        if (['Control', 'Meta', 'Shift'].includes(event.key)) return
+        event.preventDefault()
+        // React Flow accepts a keyboard key code for panActivationKeyCode.
+        if ([' ', 'Spacebar', 'Space'].includes(event.key)) setPanKey('Space')
+        else if (event.key === 'Alt') setPanKey('Alt')
+        else if (event.key.length === 1 && /^[a-z]$/i.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey)
+          setPanKey('Key' + event.key.toUpperCase())
+        else return
+        setCapturingPan(false)
+        return
+      }
+      if (capturingHome) {
+        if (event.key === 'Escape') { event.preventDefault(); setCapturingHome(false); return }
+        if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return
+        event.preventDefault()
+        const key = [event.ctrlKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.metaKey ? 'Meta' : '', event.key].filter(Boolean).join('+')
+        // Preserve standard editor, clipboard, save, browser and OS combinations.
+        if (event.metaKey || (event.ctrlKey && !event.altKey) || ['Tab', 'Delete', 'Backspace', 'F5', 'F11', 'PrintScreen'].includes(event.key)) return
+        setHomeShortcut(key)
+        setCapturingHome(false)
+        return
+      }
+      if (editingId !== null || homeOpen || settingsOpen || helpOpen || renameTarget || createProjectOpen || projectBusy || backupBusy || lineEditorId || searchOpen) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], [role="textbox"], [role="dialog"]')) return
+      const key = [event.ctrlKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.metaKey ? 'Meta' : '', event.key].filter(Boolean).join('+')
+      if (key !== homeShortcut) return
+      event.preventDefault()
+      goHome()
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [homeShortcut, capturingHome, capturingPan, editingId, homeOpen, settingsOpen, helpOpen, renameTarget, createProjectOpen, projectBusy, backupBusy, lineEditorId, searchOpen, setViewport])
+
   // Поиск работает по заголовку и содержимому, без учёта регистра.
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
   const searchResults = nodes
@@ -810,12 +978,91 @@ function Workspace() {
     )
     .sort((a, b) => a.data.title.localeCompare(b.data.title, 'ru'))
 
+  // v0.3.2: copy/paste selected canvas objects without intercepting text editing.
+  // Custom MIME is used for the system clipboard; the text fallback supports
+  // clipboard implementations that strip custom types.
+  const clipboardSerial = useRef(0)
+  useEffect(() => {
+    const mime = 'application/x-infinite-notes-nodes'
+    const prefix = 'INFINITE_NOTES_NODES_V1:'
+    type ClipPayload = { version: 1; nodes: NoteNode[]; edges: Edge[]; links: ItemLink[] }
+    const blocked = () => editingId !== null || homeOpen || settingsOpen || helpOpen ||
+      Boolean(renameTarget) || createProjectOpen || projectBusy || backupBusy ||
+      Boolean(lineEditorId) || searchOpen
+    const editable = (target: EventTarget | null) =>
+      target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable], [role="textbox"], [role="dialog"]'))
+
+    const copy = (event: ClipboardEvent) => {
+      if (blocked() || editable(event.target)) return
+      const selected = nodes.filter(node => node.selected)
+      if (!selected.length || !event.clipboardData) return
+      const ids = new Set(selected.map(node => node.id))
+      const payload: ClipPayload = {
+        version: 1,
+        nodes: selected.map(node => ({ ...node, selected: false, dragging: false })),
+        edges: edges.filter(edge => ids.has(edge.source) && ids.has(edge.target))
+          .map(edge => ({ ...edge, selected: false })),
+        links: itemLinks.filter(link => ids.has(link.sourceNoteId) && ids.has(link.targetNoteId)),
+      }
+      const serialized = JSON.stringify(payload)
+      event.clipboardData.setData(mime, serialized)
+      event.clipboardData.setData('text/plain', prefix + serialized)
+      event.preventDefault()
+      clipboardSerial.current = 0
+    }
+
+    const paste = (event: ClipboardEvent) => {
+      if (blocked() || editable(event.target) || !event.clipboardData) return
+      const custom = event.clipboardData.getData(mime)
+      const plain = event.clipboardData.getData('text/plain')
+      const serialized = custom || (plain.startsWith(prefix) ? plain.slice(prefix.length) : '')
+      if (!serialized) return // Leave images and ordinary text for future clipboard support.
+      let payload: ClipPayload
+      try { payload = JSON.parse(serialized) as ClipPayload } catch { return }
+      if (payload.version !== 1 || !Array.isArray(payload.nodes) || !payload.nodes.length ||
+          payload.nodes.length > 500 || !Array.isArray(payload.edges) || !Array.isArray(payload.links)) return
+      if (!payload.nodes.every(node => typeof node.id === 'string' && node.type === 'note' &&
+          Number.isFinite(node.position?.x) && Number.isFinite(node.position?.y) &&
+          typeof node.data?.title === 'string' && typeof node.data?.content === 'string')) return
+      event.preventDefault()
+      event.stopPropagation()
+      const offset = 32 * (++clipboardSerial.current)
+      const ids = new Map(payload.nodes.map(node => [node.id, crypto.randomUUID()]))
+      const copiedNodes: NoteNode[] = payload.nodes.map(node => ({
+        ...node, id: ids.get(node.id)!, selected: true, dragging: false,
+        position: { x: node.position.x + offset, y: node.position.y + offset },
+        data: { ...node.data },
+      }))
+      const copiedEdges: Edge[] = payload.edges
+        .filter(edge => ids.has(edge.source) && ids.has(edge.target))
+        .map(edge => ({ ...edge, id: crypto.randomUUID(),
+          source: ids.get(edge.source)!, target: ids.get(edge.target)!, selected: false }))
+      const copiedLinks: ItemLink[] = payload.links
+        .filter(link => ids.has(link.sourceNoteId) && ids.has(link.targetNoteId))
+        .map(link => ({ ...link, id: crypto.randomUUID(),
+          sourceNoteId: ids.get(link.sourceNoteId)!,
+          targetNoteId: ids.get(link.targetNoteId)! }))
+      rememberCanvas()
+      setNodes(current => [...current.map(node => ({ ...node, selected: false })), ...copiedNodes])
+      setEdges(current => [...current.map(edge => ({ ...edge, selected: false })), ...copiedEdges])
+      setItemLinks(current => [...current, ...copiedLinks])
+      setMenu(null)
+    }
+    window.addEventListener('copy', copy)
+    window.addEventListener('paste', paste)
+    return () => {
+      window.removeEventListener('copy', copy)
+      window.removeEventListener('paste', paste)
+    }
+  }, [nodes, edges, itemLinks, editingId, homeOpen, settingsOpen, helpOpen,
+      renameTarget, createProjectOpen, projectBusy, backupBusy, lineEditorId, searchOpen])
+
   // v0.3 experimental: Delete removes selected canvas objects only outside text inputs and dialogs.
   // React Flow selection is authoritative; incident edges are removed with their notes.
   useEffect(() => {
     const removeSelection = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
-      if (editingId !== null || homeOpen || settingsOpen || helpOpen || renameTarget || projectBusy || backupBusy || lineEditorId || searchOpen) return
+      if (editingId !== null || homeOpen || settingsOpen || helpOpen || renameTarget || createProjectOpen || projectBusy || backupBusy || lineEditorId || searchOpen) return
       const target = event.target
       if (target instanceof Element && (target.closest('input, textarea, select, button, [contenteditable], [role="dialog"]'))) return
       const selectedNodes = nodes.filter(node => node.selected).map(node => node.id)
@@ -834,13 +1081,13 @@ function Workspace() {
     }
     window.addEventListener('keydown', removeSelection)
     return () => window.removeEventListener('keydown', removeSelection)
-  }, [nodes, edges, editingId, homeOpen, settingsOpen, helpOpen, renameTarget, projectBusy, backupBusy, lineEditorId, searchOpen, setNodes, setEdges])
+  }, [nodes, edges, editingId, homeOpen, settingsOpen, helpOpen, renameTarget, projectBusy, backupBusy, lineEditorId, searchOpen, createProjectOpen, setNodes, setEdges])
 
   useEffect(() => {
     const onHistoryKey = (event: KeyboardEvent) => {
       const z = event.code === 'KeyZ' || ['z', 'я'].includes(event.key.toLowerCase())
       if (!(event.ctrlKey || event.metaKey) || !z || event.altKey || event.repeat) return
-      if (editingId !== null || homeOpen || settingsOpen || helpOpen || renameTarget || projectBusy || backupBusy || lineEditorId || searchOpen) return
+      if (editingId !== null || homeOpen || settingsOpen || helpOpen || renameTarget || createProjectOpen || projectBusy || backupBusy || lineEditorId || searchOpen) return
       const target = event.target
       if (target instanceof Element && target.closest('input, textarea, select, [contenteditable], [role="dialog"]')) return
       if (event.shiftKey ? !redoStack.current.length : !undoStack.current.length) return
@@ -875,7 +1122,7 @@ function Workspace() {
   }, [searchOpen])
 
   // Списки строятся по направлению стрелок: source → target.
-  const visibleItemLinks = itemLinks.filter(link => nodes.some(node => node.id === link.sourceNoteId) && nodes.some(node => node.id === link.targetNoteId))
+  const visibleItemLinks = useMemo(() => itemLinks.filter(link => nodesById.has(link.sourceNoteId) && nodesById.has(link.targetNoteId)), [itemLinks, nodesById])
   const selectedNote = nodes.find((node) => node.id === selectedNoteId)
   const outgoingNotes = selectedNote
     ? edges.filter((edge) => edge.source === selectedNote.id)
@@ -888,10 +1135,88 @@ function Workspace() {
         .filter((node): node is NoteNode => node !== undefined)
     : []
 
+  // Backlinks are derived from rich-text links; no duplicate persisted state.
+  // Match the same stable note IDs used by the existing visual-link renderer.
+  const backlinksByTarget = useMemo(() => {
+    const result = new Map<string, NoteNode[]>()
+    const validIds = new Set(nodes.map(node => node.id))
+    for (const source of nodes) {
+      if (source.data.kind && source.data.kind !== 'note') continue
+      const html = source.data.richHtml || ''
+      if (!html.includes('data-note-id')) continue
+      const targets = new Set<string>()
+      for (const match of html.matchAll(/data-note-id=["']([a-f0-9-]{36})["']/gi)) {
+        const targetId = match[1]
+        if (targetId !== source.id && validIds.has(targetId)) targets.add(targetId)
+      }
+      for (const targetId of targets) {
+        const sources = result.get(targetId) ?? []
+        sources.push(source)
+        result.set(targetId, sources)
+      }
+    }
+    return result
+  }, [nodes])
+  const selectedBacklinks = selectedNoteId ? (backlinksByTarget.get(selectedNoteId) ?? []) : []
+
+  // Navigation history is independent of canvas edit Undo/Redo.
+  type NavigationEntry = { noteId: string | null; viewport: { x: number; y: number; zoom: number } }
+  const navigationBack = useRef<NavigationEntry[]>([])
+  const navigationForward = useRef<NavigationEntry[]>([])
+  const [, setNavigationRevision] = useState(0)
+  const navigationSelectedRef = useRef<string | null>(null)
+  navigationSelectedRef.current = selectedNoteId
+  const captureNavigation = (): NavigationEntry => ({
+    noteId: navigationSelectedRef.current,
+    viewport: { ...getViewport() },
+  })
+  const restoreNavigation = (entry: NavigationEntry) => {
+    setSelectedNoteId(entry.noteId && nodes.some(node => node.id === entry.noteId) ? entry.noteId : null)
+    setMenu(null)
+    void setViewport(entry.viewport, { duration: 450 })
+    setNavigationRevision(value => value + 1)
+  }
+  const navigateBack = () => {
+    const entry = navigationBack.current.pop()
+    if (!entry) return
+    navigationForward.current.push(captureNavigation())
+    restoreNavigation(entry)
+  }
+  const navigateForward = () => {
+    const entry = navigationForward.current.pop()
+    if (!entry) return
+    navigationBack.current.push(captureNavigation())
+    restoreNavigation(entry)
+  }
+
+  // Browser-like shortcuts. Ignore editors, dialogs and modified combinations.
+  useEffect(() => {
+    if (homeOpen) return
+    const handleNavigationKey = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      const target = event.target
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'))) return
+      const stack = event.key === 'ArrowLeft' ? navigationBack.current : navigationForward.current
+      if (!stack.length) return
+      event.preventDefault()
+      if (event.key === 'ArrowLeft') navigateBack()
+      else navigateForward()
+    }
+    window.addEventListener('keydown', handleNavigationKey)
+    return () => window.removeEventListener('keydown', handleNavigationKey)
+  })
+
   // Камера плавно переходит к центру выбранной заметки.
   const focusNote = (id: string) => {
     const note = nodes.find((item) => item.id === id)
     if (!note) return
+    // Avoid adding a redundant step when the destination is already focused.
+    if (navigationSelectedRef.current === id) return
+    navigationBack.current.push(captureNavigation())
+    if (navigationBack.current.length > 100) navigationBack.current.shift()
+    navigationForward.current = []
+    setNavigationRevision(value => value + 1)
     setSelectedNoteId(id)
     setMenu(null)
     const width = note.measured?.width ?? 260
@@ -923,12 +1248,12 @@ function Workspace() {
           active = recovered.id
           localStorage.setItem(ACTIVE_PROJECT_KEY, active)
         }
-        const current = (await listProjects()).find(project => project.id === active)
+        const current = existing.find(project => project.id === active)
         if (current) {
           localStorage.setItem('infinite-notes-project-name', current.name)
           if (alive) setProjectName(current.name)
         }
-        if (alive) { await refreshProjects(); setProjectsReady(true) }
+        if (alive) { setProjects(await listProjects()); setProjectsReady(true) }
       } catch (error) { if (alive) setProjectError(`Не удалось открыть каталог проектов: ${String(error)}`) }
     }
     void initialize()
@@ -950,7 +1275,7 @@ function Workspace() {
   const persistCurrentProject = async () => {
     const id = localStorage.getItem(ACTIVE_PROJECT_KEY)
     if (!id) return
-    const existing = (await listProjects()).find(item => item.id === id)
+    const existing = await getProject(id)
     if (!existing) throw new Error('Активный проект отсутствует в каталоге')
     const blob = await exportBackup()
     await putProject({ ...existing, name: projectName, updatedAt: new Date().toISOString(), blob })
@@ -966,16 +1291,19 @@ function Workspace() {
     catch (error) { setProjectError(error instanceof Error ? error.message : String(error)) }
     finally { projectOperationRef.current = false; setProjectBusy(false) }
   }
-  const switchProject = async (target: LocalProject) => withProjectOperation(async () => {
+  const switchProject = async (target: ProjectSummary) => withProjectOperation(async () => {
     if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) { setHomeOpen(false); return }
     await persistCurrentProject()
+    // Load only the selected snapshot; catalog rows never include ZIP blobs.
+    const selected = await getProject(target.id)
+    if (!selected) throw new Error('Проект отсутствует в хранилище')
     // Validate the target before touching the current canvas.
-    if (target.blob) await inspectBackup(new File([target.blob], `${target.name}.inotes`))
+    if (selected.blob) await inspectBackup(new File([selected.blob], `${selected.name}.inotes`))
     const previousId = localStorage.getItem(ACTIVE_PROJECT_KEY)
     localStorage.setItem(ACTIVE_PROJECT_KEY, target.id)
     localStorage.setItem('infinite-notes-project-name', target.name)
     try {
-      if (target.blob) await importBackup(new File([target.blob], `${target.name}.inotes`), true)
+      if (selected.blob) await importBackup(new File([selected.blob], `${selected.name}.inotes`), true)
       else {
         for (const key of BACKUP_KEYS) localStorage.removeItem(key)
         await clearStoredImages()
@@ -988,8 +1316,9 @@ function Workspace() {
     }
   })
   const newProject = async () => {
-    const name = window.prompt('Название нового проекта', 'Новый проект')?.trim()
-    if (!name) return
+    const name = createProjectName.trim()
+    if (!name || projectBusy) return
+    setCreateProjectOpen(false)
     await withProjectOperation(async () => {
       await persistCurrentProject()
       const next = createProject(name)
@@ -1071,7 +1400,7 @@ function Workspace() {
     window.addEventListener('keydown', onSaveKey)
     return () => window.removeEventListener('keydown', onSaveKey)
   })
-  const openRenameProject = (target?: LocalProject) => {
+  const openRenameProject = (target?: ProjectSummary) => {
     const current = target || projects.find(project => project.id === localStorage.getItem(ACTIVE_PROJECT_KEY))
     if (!current) { setProjectError('Не удалось найти проект для переименования.'); return }
     setProjectError('')
@@ -1084,7 +1413,7 @@ function Workspace() {
     if (!name) { setProjectError('Введите название проекта.'); return }
     const targetId = renameTarget.id
     await withProjectOperation(async () => {
-      const current = (await listProjects()).find(project => project.id === targetId)
+      const current = await getProject(targetId)
       if (!current) throw new Error('Проект больше не найден в каталоге')
       await putProject({ ...current, name, updatedAt: new Date().toISOString() })
       if (targetId === localStorage.getItem(ACTIVE_PROJECT_KEY)) {
@@ -1095,17 +1424,27 @@ function Workspace() {
       setRenameTarget(null)
     })
   }
-  const duplicateProject = async (target: LocalProject) => withProjectOperation(async () => {
+  const duplicateProject = async (target: ProjectSummary) => withProjectOperation(async () => {
     if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) await persistCurrentProject()
-    const source = (await listProjects()).find(item => item.id === target.id)
+    const source = await getProject(target.id)
     if (!source) throw new Error('Проект не найден')
     await putProject(createProject(`${source.name} — копия`, source.blob))
     await refreshProjects()
   })
-  const deleteProject = async (target: LocalProject) => {
+  const deleteProject = async (target: ProjectSummary) => {
     if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) { setProjectError('Нельзя удалить открытый проект. Сначала переключитесь на другой.'); return }
-    if (!window.confirm(`Удалить проект «${target.name}»? Это удалит его локальную копию. Для сохранения проекта сначала экспортируйте .inotes.`)) return
-    await withProjectOperation(async () => { await removeProject(target.id); await refreshProjects() })
+    setProjectError('')
+    setDeleteTarget(target)
+  }
+  const confirmDeleteProject = async () => {
+    if (!deleteTarget || projectOperationRef.current) return
+    const target = deleteTarget
+    if (target.id === localStorage.getItem(ACTIVE_PROJECT_KEY)) { setDeleteTarget(null); setProjectError('Нельзя удалить открытый проект.'); return }
+    await withProjectOperation(async () => {
+      await removeProject(target.id)
+      await refreshProjects()
+      setDeleteTarget(null)
+    })
   }
 
   // Patch 07: React Flow resizes nodes; persist dimensions and update connection handles.
@@ -1128,19 +1467,103 @@ function Workspace() {
     setSearchHighlightedId(id)
   }
 
+  // Stable handlers: presentation data of unaffected nodes can be reused during drag.
+  const nodeHandlersRef = useRef({ toggleNote, focusNote, resizeCanvasImage, updateCanvasGallery, resizeNote, rememberCanvas })
+  nodeHandlersRef.current = { toggleNote, focusNote, resizeCanvasImage, updateCanvasGallery, resizeNote, rememberCanvas }
+  const stableNodeHandlers = useMemo(() => ({
+    onToggle: (...args: Parameters<typeof toggleNote>) => nodeHandlersRef.current.toggleNote(...args),
+    onFollowItemLink: (...args: Parameters<typeof focusNote>) => nodeHandlersRef.current.focusNote(...args),
+    onResizeCanvasImage: (...args: Parameters<typeof resizeCanvasImage>) => nodeHandlersRef.current.resizeCanvasImage(...args),
+    onUpdateGallery: (...args: Parameters<typeof updateCanvasGallery>) => nodeHandlersRef.current.updateCanvasGallery(...args),
+    onResizeNote: (...args: Parameters<typeof resizeNote>) => nodeHandlersRef.current.resizeNote(...args),
+    onResizeStart: () => nodeHandlersRef.current.rememberCanvas(),
+  }), [])
+  const presentedCache = useRef(new Map<string, { source: NoteNode; links: typeof visibleItemLinks; highlight: boolean; presented: NoteNode }>())
+  // Parse only while the visualization is enabled. Deduplicate links to the same
+  // target, so repeated mentions do not create unnecessary SVG edges.
+  const visualInternalEdges = useMemo<Edge[]>(() => {
+    if (!showInternalLinkLines) return []
+    const existing = new Set(nodes.map(node => node.id))
+    const result: Edge[] = []
+    for (const node of nodes) {
+      if (node.data.kind && node.data.kind !== 'note') continue
+      const html = node.data.richHtml || ''
+      if (!html.includes('data-note-id')) continue
+      const found = new Set<string>()
+      const matches = html.matchAll(/data-note-id=["']([a-f0-9-]{36})["']/gi)
+      for (const match of matches) {
+        const target = match[1]
+        if (!existing.has(target) || target === node.id || found.has(target)) continue
+        found.add(target)
+        const targetNode = nodesById.get(target)
+        if (!targetNode) continue
+        const automatic = getConnectionSides(node, targetNode)
+        const sourceSide = internalVisual.sourceSide === 'auto'
+          ? automatic.sourceHandle : `source-${internalVisual.sourceSide}`
+        const targetSide = internalVisual.targetSide === 'auto'
+          ? automatic.targetHandle : `target-${internalVisual.targetSide}`
+        result.push({
+          id: `internal-visual:${node.id}:${target}`,
+          source: node.id,
+          target,
+          sourceHandle: sourceSide,
+          targetHandle: targetSide,
+          type: 'internalCard',
+          selectable: false,
+          focusable: false,
+          deletable: false,
+          animated: false,
+          style: {
+            stroke: internalVisual.themeColor
+              ? (THEMES.find(theme => theme.id === themeId)?.accent ?? DEFAULT_INTERNAL_VISUAL.color)
+              : internalVisual.color,
+            strokeWidth: internalVisual.width,
+            strokeDasharray: internalVisual.pattern === 'dashed' ? '6 6' : internalVisual.pattern === 'dotted' ? '2 6' : undefined,
+            opacity: 0.8,
+            pointerEvents: 'none',
+          },
+          zIndex: -1,
+        })
+      }
+    }
+    return result
+  }, [nodes, nodesById, showInternalLinkLines, internalVisual, themeId])
+
+  const presentedNodes = useMemo(() => {
+    const activeIds = new Set(nodes.map(node => node.id))
+    const linkGroups = new Map<string, typeof visibleItemLinks>()
+    for (const link of visibleItemLinks) {
+      const group = linkGroups.get(link.sourceNoteId) ?? []
+      group.push(link)
+      linkGroups.set(link.sourceNoteId, group)
+    }
+    const result = nodes.map(node => {
+      const links = linkGroups.get(node.id) ?? []
+      const highlighted = searchHighlightedId === node.id
+      const old = presentedCache.current.get(node.id)
+      // The link group is reconstructed on each drag, so compare its members.
+      if (old?.source === node && old.highlight === highlighted &&
+          old.links.length === links.length && old.links.every((link, i) => link === links[i])) return old.presented
+      const presented: NoteNode = {
+        ...node,
+        data: { ...node.data, ...stableNodeHandlers,
+          itemLinks: links.map(link => ({ itemId: link.itemId, targetId: link.targetNoteId,
+            targetTitle: nodesById.get(link.targetNoteId)?.data.title || 'Заметка' })) },
+        className: [node.className, highlighted ? 'note-search-highlight' : ''].filter(Boolean).join(' '),
+      }
+      presentedCache.current.set(node.id, { source: node, links, highlight: highlighted, presented })
+      return presented
+    })
+    for (const id of presentedCache.current.keys()) if (!activeIds.has(id)) presentedCache.current.delete(id)
+    return result
+  }, [nodes, visibleItemLinks, searchHighlightedId, nodesById, stableNodeHandlers])
+
   return (
     <div className="workspace" data-theme={themeId}>
       <ReactFlow
         edgeTypes={edgeTypes}
-        nodes={nodes.map((node) => ({
-          ...node,
-          data: { ...node.data, onToggle: toggleNote,
-            itemLinks: visibleItemLinks.filter(link => link.sourceNoteId === node.id).map(link => ({ itemId: link.itemId, targetId: link.targetNoteId, targetTitle: nodes.find(n => n.id === link.targetNoteId)?.data.title || 'Заметка' })),
-            onFollowItemLink: focusNote, onResizeCanvasImage: resizeCanvasImage, onUpdateGallery: updateCanvasGallery, onResizeNote: resizeNote, onResizeStart: rememberCanvas },
-          className: [node.className, searchHighlightedId === node.id ? 'note-search-highlight' : '']
-            .filter(Boolean).join(' '),
-        }))}
-        edges={edges}
+        nodes={presentedNodes}
+        edges={showInternalLinkLines ? [...edges, ...visualInternalEdges] : edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onNodeDragStart={() => rememberCanvas()}
@@ -1164,12 +1587,12 @@ function Workspace() {
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneClick={() => setMenu(null)}
-        onPaneContextMenu={(event) => { event.preventDefault(); setMenu({ type: 'pane', x: event.clientX, y: event.clientY }) }}
-        panOnDrag={[1]}
+        onPaneContextMenu={(event) => { event.preventDefault(); if (!panRight) setMenu({ type: 'pane', x: event.clientX, y: event.clientY }) }}
+        panOnDrag={[...(panMiddle ? [1] : []), ...(panRight ? [2] : [])]}
         selectionOnDrag={true}
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode="Shift"
-        panActivationKeyCode="Space"
+        panActivationKeyCode={panKey || null}
         zoomOnScroll={true}
         minZoom={0.2}
         maxZoom={3}
@@ -1187,10 +1610,20 @@ function Workspace() {
         />
       </ReactFlow>
 
+      {!homeOpen && <div className="navigation-history-actions" aria-label="История переходов">
+        <button type="button" disabled={navigationBack.current.length === 0} onClick={navigateBack} title="Назад (Alt+←)" aria-label="Назад к предыдущей позиции">← Назад</button>
+        <button type="button" disabled={navigationForward.current.length === 0} onClick={navigateForward} title="Вперёд (Alt+→)" aria-label="Вперёд к следующей позиции">Вперёд →</button>
+      </div>}
       {!homeOpen && <div className="canvas-history-actions">
         <button type="button" disabled={!historyStatus.undo} onClick={undoCanvas} title="Отменить действие (Ctrl+Z)">↶ Отменить</button>
         <button type="button" disabled={!historyStatus.redo} onClick={redoCanvas} title="Повторить действие (Ctrl+Shift+Z)">↷ Повторить</button>
       </div>}
+      {!homeOpen && <button type="button" className={`internal-lines-toggle${showInternalLinkLines ? ' active' : ''}`}
+        aria-pressed={showInternalLinkLines}
+        title="Пунктирные связи между заметками, на которые ведут текстовые ссылки"
+        onClick={() => setShowInternalLinkLines(value => !value)}>
+        ↗ Ссылки {showInternalLinkLines ? 'вкл.' : 'выкл.'}
+      </button>}
       <button type="button" className="project-home-toggle" onClick={() => { setHomeOpen(true); setMenu(null) }} title="Меню проектов">☰ Проекты</button>
       <button type="button" className="settings-toggle" onClick={() => { setSettingsOpen(true); setMenu(null) }} aria-label="Открыть настройки">
         ⚙ Настройки
@@ -1282,6 +1715,15 @@ function Workspace() {
                 const destination = nodes.find(node => node.id === (outgoing ? link.targetNoteId : link.sourceNoteId))
                 return <button key={`item-${link.id}`} type="button" className="navigation-item navigation-item-compact" onClick={() => focusNote(outgoing ? link.targetNoteId : link.sourceNoteId)} title="Перейти к заметке"><span className="navigation-type-icon" title="Связь пункта">🔗</span><span className="navigation-link-text"><strong>{destination?.data.title || 'Заметка'}</strong><small>{outgoing ? 'Пункт → заметка' : 'Заметка → пункт'} · {link.itemLabel}</small></span><span>›</span></button>
               })}
+              <div className="navigation-unified-title"><h3>На эту заметку ссылаются</h3><span>{selectedBacklinks.length}</span></div>
+              {selectedBacklinks.length === 0 && <p className="navigation-empty">Пока нет входящих гиперссылок.</p>}
+              {selectedBacklinks.map(source => (
+                <button key={`backlink-${source.id}`} type="button" className="navigation-item navigation-item-compact" onClick={() => focusNote(source.id)} title="Перейти к заметке-источнику">
+                  <span className="navigation-type-icon" aria-hidden="true">↶</span>
+                  <span className="navigation-link-text"><strong>{source.data.title || 'Без названия'}</strong><small>Гиперссылка · Обратная</small></span>
+                  <span aria-hidden="true">›</span>
+                </button>
+              ))}
             </>
           )}
         </aside>
@@ -1370,6 +1812,17 @@ function Workspace() {
       )}
 
       <input ref={projectInputRef} type="file" accept=".inotes,.zip,application/zip" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void openProjectFile(file) }} />
+      {createProjectOpen && <div className="inotes-project-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setCreateProjectOpen(false) }}>
+        <form className="inotes-project-modal" role="dialog" aria-modal="true" aria-label="Создать проект" onSubmit={event => { event.preventDefault(); void newProject() }} onKeyDown={event => { if (event.key === 'Escape' && !projectBusy) { event.stopPropagation(); setCreateProjectOpen(false) } }}>
+          <h2>＋ Новый проект</h2>
+          <label htmlFor="inotes-new-project-name">Название проекта</label>
+          <input id="inotes-new-project-name" autoFocus maxLength={120} value={createProjectName} disabled={projectBusy} onFocus={event => event.currentTarget.select()} onChange={event => setCreateProjectName(event.target.value)} />
+          <div className="inotes-project-modal-actions">
+            <button type="button" disabled={projectBusy} onClick={() => setCreateProjectOpen(false)}>Отмена</button>
+            <button type="submit" disabled={projectBusy || !createProjectName.trim()}>{projectBusy ? 'Создаём…' : 'Создать'}</button>
+          </div>
+        </form>
+      </div>}
       {renameTarget && <div role="presentation" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setRenameTarget(null) }}>
         <form role="dialog" aria-modal="true" aria-label="Переименовать проект" onSubmit={event => { event.preventDefault(); void renameProject() }} style={{ width: 'min(440px, 100%)', padding: 24, borderRadius: 16, border: '1px solid var(--accent, #aa83bc)', background: 'var(--panel-bg, #33343d)', color: 'var(--text-color, #fff)', boxShadow: '0 20px 70px rgba(0,0,0,.5)', display: 'grid', gap: 16 }}>
           <h2 style={{ margin: 0, fontSize: 21 }}>✎ Переименовать проект</h2>
@@ -1382,12 +1835,25 @@ function Workspace() {
           </div>
         </form>
       </div>}
+      {deleteTarget && <div className="inotes-delete-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setDeleteTarget(null) }}>
+        <section className="inotes-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="inotes-delete-title" aria-describedby="inotes-delete-description" onKeyDown={event => { if (event.key === 'Escape' && !projectBusy) { event.stopPropagation(); setDeleteTarget(null) } }}>
+          <span className="inotes-delete-eyebrow">УПРАВЛЕНИЕ ПРОЕКТАМИ</span>
+          <h2 id="inotes-delete-title">Удалить проект?</h2>
+          <p id="inotes-delete-description">Вы собираетесь удалить локальный проект <strong>«{deleteTarget.name}»</strong>.</p>
+          <p className="inotes-delete-warning">Это действие нельзя отменить. Если проект нужен в будущем, сначала сохраните его копию в формате <strong>.inotes</strong>.</p>
+          {projectError && <p role="alert" className="inotes-delete-error">{projectError}</p>}
+          <div className="inotes-delete-actions">
+            <button type="button" autoFocus disabled={projectBusy} onClick={() => setDeleteTarget(null)}>Отмена</button>
+            <button type="button" className="inotes-delete-danger" disabled={projectBusy} onClick={() => void confirmDeleteProject()}>{projectBusy ? 'Удаляем…' : 'Удалить проект'}</button>
+          </div>
+        </section>
+      </div>}
       {homeOpen && <div className="project-home-overlay" role="presentation">
         <section className="project-home-dialog" role="dialog" aria-modal="true" aria-label="Проекты Infinite Notes">
-          <div className="project-home-brand"><span className="project-home-logo">∞</span><div><span className="project-home-kicker">INFINITE NOTES · v0.3.0</span><h1>Ваши идеи. Ваше пространство.</h1></div></div>
+          <div className="project-home-brand"><span className="project-home-logo">∞</span><div><span className="project-home-kicker">INFINITE NOTES · v0.3.8</span><h1>Ваши идеи. Ваше пространство.</h1></div></div>
           <p className="project-home-intro">Локальные проекты сохраняются автоматически. Выбирайте пространство одним нажатием; файл .inotes нужен только для переноса и резервного копирования.</p>
           <div className="project-home-grid">
-            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => void newProject()}><strong>＋ Новый проект</strong><span>Создать отдельный пустой холст</span></button>
+            <button type="button" disabled={projectBusy || !projectsReady} onClick={() => { setCreateProjectName('Новый проект'); setProjectError(''); setCreateProjectOpen(true) }}><strong>＋ Новый проект</strong><span>Создать отдельный пустой холст</span></button>
             <button type="button" disabled={projectBusy || !projectsReady} onClick={() => void openNativeProjectFile()}><strong>▤ Открыть .inotes</strong><span>Добавить .inotes или ZIP в список</span></button>
             <button type="button" disabled={projectBusy || !projectsReady} onClick={() => setHomeOpen(false)}><strong>↗ Продолжить</strong><span>{projectName}</span></button>
             <button type="button" disabled={projectBusy || !projectsReady} onClick={() => void saveProjectFile(true)}><strong>💾 Сохранить .inotes</strong><span>Сохранить копию на диск или флешку</span></button>
@@ -1431,9 +1897,9 @@ function Workspace() {
                 {helpSection === 'start' && <><h3>Начало работы</h3><p>Infinite Notes — бесконечный холст для заметок, галерей, отдельных изображений и связей между идеями.</p><ol><li>Создай проект или выбери существующий на экране «Проекты».</li><li>ПКМ по пустому холсту — создать заметку, галерею или добавить отдельное изображение.</li><li>Двойной ЛКМ по заметке — открыть редактор; перетаскивание заголовка — переместить заметку.</li><li>Выдели заметку и потяни за край или угол, чтобы изменить ширину и высоту.</li><li>Используй «Поиск» для поиска заметок, а «Проекты» — для переключения пространств.</li></ol><p className="help-tip">Локальные проекты сохраняются автоматически. Для отдельного файла на диске используй «Сохранить .inotes» или Ctrl + S.</p></>}
                 {helpSection === 'editor' && <><h3>Редактор заметок</h3><p>Открой заметку двойным ЛКМ или через ПКМ → «Редактировать».</p><ul><li>Доступны жирный, курсив, подчёркивание, зачёркивание, цвет и выделение текста.</li><li>Tab в обычном абзаце вставляет отступ; в списке Tab делает вложенный пункт, Shift + Tab поднимает пункт на уровень выше.</li><li>Ctrl + Shift + 7 переключает нумерованный список; Ctrl + Shift + 8 — маркированный.</li><li>Tab из поля названия переводит фокус в текст заметки.</li><li>Подпункты списка можно сворачивать, а текст и изображения форматировать в редакторе.</li></ul><p className="help-tip">Внутри текстового редактора Ctrl + Z отменяет изменения текста; на холсте — действия с объектами.</p></>}
                 {helpSection === 'links' && <><h3>Связи между заметками</h3><p>Через контекстное меню заметки можно создать связь с другой заметкой. Параметры линий настраиваются в «Настройки → Связи».</p><p>В редакторе можно связать отдельный пункт списка с заметкой; переходы доступны по значку связи рядом с пунктом и в панели «Связи».</p></>}
-                {helpSection === 'images' && <><h3>Изображения и галереи</h3><p>ПКМ по пустому холсту → «Добавить изображение» создаёт самостоятельную картинку. Её можно выделить, передвинуть и изменить размер за угол с сохранением пропорций.</p><p>Галерея — свободная доска: изображения можно двигать прямо внутри карточки, изменять размер, накладывать друг на друга и менять порядок слоёв через ПКМ или меню ⋯. Команда «Упорядочить» раскладывает изображения автоматически.</p><p>Размер самой галереи меняется за границы и углы. Изображения также можно вставлять в текстовые заметки. Поддерживаются PNG, JPEG, WebP и GIF.</p><p className="help-tip">Изображения хранятся в IndexedDB приложения. Перед очисткой данных сделай резервную копию.</p></>}
+                {helpSection === 'images' && <><h3>Изображения и галереи</h3><p>ПКМ по пустому холсту → «Добавить изображение» создаёт самостоятельную картинку. Скриншоты из Win + Shift + S вставляются через Ctrl + V; файлы изображений можно перетаскивать из Проводника на холст или в галерею. Её можно выделить, передвинуть и изменить размер за угол с сохранением пропорций.</p><p>Галерея — свободная доска: изображения можно двигать прямо внутри карточки, изменять размер, накладывать друг на друга и менять порядок слоёв через ПКМ или меню ⋯. Команда «Упорядочить» раскладывает изображения автоматически.</p><p>Размер самой галереи меняется за границы и углы. Изображения также можно вставлять в текстовые заметки. Поддерживаются PNG, JPEG, WebP и GIF.</p><p className="help-tip">Изображения хранятся в IndexedDB приложения. Перед очисткой данных сделай резервную копию.</p></>}
                 {helpSection === 'backup' && <><h3>Проекты и резервные копии</h3><p>Локальные проекты автоматически сохраняются внутри приложения. Для сохранения отдельного файла выбери «Сохранить .inotes» на экране проектов или нажми Ctrl + S: откроется окно выбора места и имени файла. Ctrl + S каждый раз показывает диалог сохранения.</p><p>Чтобы открыть ранее сохранённый проект, используй «Открыть .inotes». Для резервного ZIP открой «Настройки → Резервные копии», экспортируй архив и сохрани его в безопасном месте.</p><p className="help-tip">Автосохранение локального проекта не означает автоматическую перезапись файла .inotes на диске. После изменений сохраняй новый файл вручную.</p></>}
-                {helpSection === 'controls' && <><h3>Горячие клавиши и мышь</h3><div className="help-shortcuts"><span>Ctrl + S</span><span>Открыть окно сохранения .inotes</span><span>Ctrl + Z</span><span>Отменить действие на холсте</span><span>Ctrl + Shift + Z</span><span>Повторить отменённое действие</span><span>Delete</span><span>Удалить выделенный объект (вне ввода текста)</span><span>Ctrl + F</span><span>Поиск заметок (вне редактора)</span><span>Tab / Shift + Tab</span><span>Отступ / уровень вложенности списка</span><span>Ctrl + Shift + 7</span><span>Нумерованный список в редакторе</span><span>Ctrl + Shift + 8</span><span>Маркированный список в редакторе</span><span>Двойной ЛКМ</span><span>Открыть заметку для редактирования</span><span>ПКМ</span><span>Контекстное меню холста, заметки или изображения</span><span>Пробел + перетаскивание</span><span>Переместить холст</span><span>Колёсико мыши</span><span>Масштаб холста</span><span>Escape</span><span>Закрыть поиск или снять выделение изображения</span></div><p>Выделенную заметку можно растягивать за края и углы. Галерея позволяет перемещать изображения без открытия редактора. История отмены/повтора хранится до закрытия приложения.</p></>}
+                {helpSection === 'controls' && <><h3>Горячие клавиши и мышь</h3><div className="help-shortcuts"><span>Alt + ← / →</span><span>Назад / вперёд по истории переходов между заметками</span><span>Ctrl + S</span><span>Открыть окно сохранения .inotes</span><span>Ctrl + Z</span><span>Отменить действие на холсте</span><span>Ctrl + Shift + Z</span><span>Повторить отменённое действие</span><span>Delete</span><span>Удалить выделенный объект (вне ввода текста)</span><span>Ctrl + F</span><span>Поиск заметок (вне редактора)</span><span>Tab / Shift + Tab</span><span>Отступ / уровень вложенности списка</span><span>Ctrl + Shift + 7</span><span>Нумерованный список в редакторе</span><span>Ctrl + Shift + 8</span><span>Маркированный список в редакторе</span><span>Двойной ЛКМ</span><span>Открыть заметку для редактирования</span><span>ПКМ</span><span>Контекстное меню холста, заметки или изображения</span><span>Пробел + перетаскивание</span><span>Переместить холст</span><span>Колёсико мыши</span><span>Масштаб холста</span><span>Escape</span><span>Закрыть поиск или снять выделение изображения</span></div><p>Выделенную заметку можно растягивать за края и углы. Галерея позволяет перемещать изображения без открытия редактора. История отмены/повтора хранится до закрытия приложения.</p></>}
                 {helpSection === 'about' && <><h3>О Infinite Notes</h3><p><strong>Infinite Notes 0.3.0</strong> — локальное приложение для заметок и визуальных досок на бесконечном холсте под Windows.</p><p>В версии 0.3.0 появились свободные галереи и отдельные изображения, изменение размеров заметок, история Undo / Redo, сохранение .inotes через диалог выбора файла и улучшенный редактор списков.</p><p>Технологии: React, TypeScript, Vite, React Flow, Tiptap и Tauri 2. Локальные данные хранятся в приложении, изображения — в IndexedDB.</p></>}
               </div>
             </div>
@@ -1453,6 +1919,7 @@ function Workspace() {
             <div className="settings-tabs">
               <button type="button" className={settingsTab === 'appearance' && !lineEditorId ? 'active' : ''} onClick={() => { setSettingsTab('appearance'); setLineEditorId(null) }}>Оформление</button>
               <button type="button" className={settingsTab === 'connections' || !!lineEditorId ? 'active' : ''} onClick={() => { setSettingsTab('connections'); setLineEditorId(null) }}>Связи</button>
+              <button type="button" className={settingsTab === 'controls' && !lineEditorId ? 'active' : ''} onClick={() => { setSettingsTab('controls'); setLineEditorId(null) }}>Управление</button>
               <button type="button" className={settingsTab === 'backup' && !lineEditorId ? 'active' : ''} onClick={() => { setSettingsTab('backup'); setLineEditorId(null) }}>Резервные копии</button>
             </div>
             {!lineEditorId && settingsTab === 'backup' ? (
@@ -1496,6 +1963,32 @@ function Workspace() {
                 {backupMessage && <p className="backup-message" role="status">{backupMessage}</p>}
                 <p className="backup-note">Восстановление перезагрузит приложение. Архив не содержит исполняемые файлы программы.</p>
               </section>
+            ) : !lineEditorId && settingsTab === 'controls' ? (
+              <section className="settings-section">
+                <h3>Управление холстом</h3>
+                <p>Способы перемещения работают одновременно. Включите нужные и назначьте клавиши.</p>
+                <div className="settings-fields">
+                  <label><input type="checkbox" checked={panMiddle} onChange={event => setPanMiddle(event.target.checked)} /> Средняя кнопка мыши (СКМ)</label>
+                  <label><input type="checkbox" checked={panRight} onChange={event => setPanRight(event.target.checked)} /> Правая кнопка мыши (ПКМ)</label>
+                  <p>При включённой ПКМ контекстное меню пустого холста отключается.</p>
+                  <label>Клавиша + ЛКМ для перемещения</label>
+                  <p>Текущая: <strong>{panKey || 'Не назначена'}</strong></p>
+                  <button type="button" className="settings-reset" onClick={() => { setCapturingPan(true); setCapturingHome(false) }}>
+                    {capturingPan ? 'Нажмите Space, Alt или букву (Esc — отмена)' : 'Назначить клавишу перемещения'}
+                  </button>
+                  <button type="button" className="settings-reset" onClick={() => { setPanKey(''); setCapturingPan(false) }}>Отключить клавишу перемещения</button>
+                  <label>Горячая клавиша «Домой»</label>
+                  <p>Текущая: <strong>{homeShortcut}</strong></p>
+                  <button type="button" className="settings-reset" onClick={() => { setCapturingHome(true); setCapturingPan(false) }}>
+                    {capturingHome ? 'Нажмите клавишу (Esc — отмена)' : 'Назначить клавишу «Домой»'}
+                  </button>
+                  <button type="button" className="settings-reset" onClick={() => {
+                    setPanMiddle(true); setPanRight(false); setPanKey('Space'); setHomeShortcut('Home')
+                    setCapturingHome(false); setCapturingPan(false)
+                  }}>Сбросить управление</button>
+                  <p>По умолчанию одновременно работают СКМ и Space + ЛКМ. Ctrl+C, Ctrl+V, Ctrl+S, Ctrl+Z и системные сочетания зарезервированы.</p>
+                </div>
+              </section>
             ) : !lineEditorId && settingsTab === 'appearance' ? (
               <section className="settings-section">
                 <h3>Тема приложения</h3>
@@ -1513,6 +2006,35 @@ function Workspace() {
               </section>
             ) : (
               <section className="settings-section">
+                {!lineEditorId && <div className="internal-visual-settings">
+                  <h3>Гиперссылки между заметками</h3>
+                  <p>Параметры пунктирных линий, создаваемых из текстовых гиперссылок. Обычные связи не изменяются.</p>
+                  <div className="settings-fields">
+                    <label>Точка выхода из заметки
+                      <select value={internalVisual.sourceSide} onChange={event => setInternalVisual(current => ({ ...current, sourceSide: event.target.value as InternalLinkSide }))}>
+                        {INTERNAL_SIDE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label>Точка входа в заметку
+                      <select value={internalVisual.targetSide} onChange={event => setInternalVisual(current => ({ ...current, targetSide: event.target.value as InternalLinkSide }))}>
+                        {INTERNAL_SIDE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <label>Стиль линий гиперссылок
+                      <select value={internalVisual.pattern} onChange={event => setInternalVisual(current => ({ ...current, pattern: event.target.value as LinePattern }))}>
+                        <option value="dashed">Пунктирная</option><option value="solid">Сплошная</option><option value="dotted">Точечная</option>
+                      </select>
+                    </label>
+                    <label className="settings-checkbox"><input type="checkbox" checked={internalVisual.themeColor} onChange={event => setInternalVisual(current => ({ ...current, themeColor: event.target.checked }))} /> Цвет активной темы</label>
+                    {!internalVisual.themeColor && <label>Свой цвет
+                      <input type="color" value={internalVisual.color} onChange={event => setInternalVisual(current => ({ ...current, color: event.target.value }))} />
+                    </label>}
+                    <label>Толщина: {internalVisual.width.toFixed(1)} px
+                      <input type="range" min="1" max="5" step="0.2" value={internalVisual.width} onChange={event => setInternalVisual(current => ({ ...current, width: Number(event.target.value) }))} />
+                    </label>
+                    <button type="button" className="settings-reset" onClick={() => setInternalVisual({ ...DEFAULT_INTERNAL_VISUAL })}>Сбросить настройки гиперссылок</button>
+                  </div>
+                </div>}
                 <h3>{lineEditorId ? 'Оформление выбранной связи' : 'Стиль новых связей'}</h3>
                 <p>{lineEditorId ? 'Эти изменения затронут только выбранную связь.' : 'Эти параметры применяются к новым связям. Уже созданные связи не меняются.'}</p>
                 {(() => {
@@ -1600,62 +2122,23 @@ function Workspace() {
               </label>
               {galleryError && <p className="image-error">{galleryError}</p>}
               <ImageGallery images={draftGallery} onChange={setDraftGallery} />
-            </section> : <RichTextEditor
+            </section> : <Suspense fallback={<div className="rich-editor-loading">Загрузка редактора…</div>}><RichTextEditor
               key={editingId}
+              targets={nodes.filter(node => node.id !== editingId).map(node => ({ id: node.id, title: node.data.title }))}
               initialHtml={draftHtml || ''}
               initialText={draftContent}
-              onLinkItem={(itemId, itemLabel) => {
-                setItemLinkDraft({ itemId, itemLabel })
-                setItemLinkQuery('')
-              }}
               onChange={(html, plain) => {
                 setDraftHtml(html)
                 setDraftContent(plain)
               }}
-            />}
+            /></Suspense>}
 
-            {itemLinkDraft && <section className="item-link-picker">
-              <div className="item-link-picker-heading">
-                <strong>🔗 Связать пункт</strong>
-                <button type="button" onClick={() => setItemLinkDraft(null)} aria-label="Закрыть выбор">×</button>
-              </div>
-              <p>Пункт: <strong>{itemLinkDraft.itemLabel}</strong></p>
-              <input aria-label="Поиск целевой заметки" placeholder="⌕ Найти заметку..." value={itemLinkQuery}
-                onChange={event => setItemLinkQuery(event.target.value)} />
-              <div className="item-link-results">
-                {nodes.filter(node => node.id !== editingId && node.data.title.toLowerCase().includes(itemLinkQuery.trim().toLowerCase())).sort((a,b) => a.data.title.localeCompare(b.data.title,'ru')).map(node => {
-                  const linked = [...itemLinks.filter(link => !removedItemLinkIds.includes(link.id)), ...pendingItemLinks]
-                    .some(link => link.sourceNoteId === editingId && link.itemId === itemLinkDraft.itemId && link.targetNoteId === node.id)
-                  return <button key={node.id} type="button" disabled={linked} className="item-link-result" onClick={() => {
-                    if (!editingId) return
-                    setPendingItemLinks(current => [...current, { id: crypto.randomUUID(), sourceNoteId: editingId, itemId: itemLinkDraft.itemId, targetNoteId: node.id, itemLabel: itemLinkDraft.itemLabel }])
-                    setItemLinkFeedback('Связь добавлена. Нажми «Сохранить», чтобы подтвердить.')
-                    setItemLinkDraft(null)
-                  }}><span>▤ {node.data.title}</span><span>{linked ? '✓ Связано' : '＋'}</span></button>
-                })}
-                {nodes.filter(node => node.id !== editingId && node.data.title.toLowerCase().includes(itemLinkQuery.trim().toLowerCase())).length === 0 && <p className="navigation-empty">Ничего не найдено</p>}
-              </div>
-              <button type="button" className="item-link-cancel" onClick={() => setItemLinkDraft(null)}>Отмена</button>
-            </section>}
-            {itemLinkFeedback && <p className="item-link-feedback">{itemLinkFeedback}</p>}
-            {(itemLinks.some(link => link.sourceNoteId === editingId && !removedItemLinkIds.includes(link.id)) || pendingItemLinks.length > 0) && <section className="item-link-existing">
-              <strong>Связи пунктов</strong>
-              {[...itemLinks.filter(link => link.sourceNoteId === editingId && !removedItemLinkIds.includes(link.id)), ...pendingItemLinks].map(link => (
-                <div key={link.id} className="item-link-existing-row">
-                  <span>{link.itemLabel} → {nodes.find(node => node.id === link.targetNoteId)?.data.title || 'Удалённая заметка'}</span>
-                  <button type="button" title="Удалить связь" onClick={() => {
-                    setPendingItemLinks(current => current.filter(item => item.id !== link.id))
-                    setRemovedItemLinkIds(current => [...current, link.id])
-                  }}>×</button>
-                </div>
-              ))}
-            </section>}
             </div>
             <div className="editor-actions">
               <span className="editor-footer-hint">Изменения применяются после сохранения</span>
               <button
                 className="cancel-button"
-                onClick={() => { setPendingItemLinks([]); setRemovedItemLinkIds([]); setItemLinkDraft(null); setEditingId(null) }}
+                onClick={() => setEditingId(null)}
               >
                 Отмена
               </button>

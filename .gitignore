@@ -12,6 +12,8 @@ src-tauri/target/
 # Local environment
 .env
 .env.*
+.env.local
+.env.*.local
 !.env.example
 
 # Editor and system files
@@ -24,6 +26,8 @@ Thumbs.db
 *.zip
 *.7z
 *.rar
+*.inotes
+*.exe
 
 # Local secrets
 *.pem

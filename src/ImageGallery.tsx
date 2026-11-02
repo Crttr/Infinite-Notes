@@ -131,6 +131,21 @@ export function ImageGallery({ images, onChange, inlineMode = false }: { images:
     setSelectedId(null)
   }
   useEffect(() => {
+    if (!editable || !selectedId) return
+    const removeSelectedPhoto = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable], [role="dialog"]')) return
+      if (!images.some(photo => photo.id === selectedId)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      onChange?.(images.filter(photo => photo.id !== selectedId))
+      setSelectedId(null)
+    }
+    window.addEventListener('keydown', removeSelectedPhoto, true)
+    return () => window.removeEventListener('keydown', removeSelectedPhoto, true)
+  }, [editable, selectedId, images, onChange])
+  useEffect(() => {
     const clear = (event: PointerEvent) => { if (!(event.target instanceof Element) || !event.target.closest('.gallery-board-photo')) setSelectedId(null) }
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setSelectedId(null) }
     document.addEventListener('pointerdown', clear, true)

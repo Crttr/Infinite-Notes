@@ -1,4 +1,4 @@
-import { allStoredImages, restoreStoredImages, clearStoredImages } from './ImageStorage'
+import { allStoredImages, restoreStoredImages, clearStoredImages, getImageRevision } from './ImageStorage'
 
 export const BACKUP_KEYS = [
   'infinite-notes-v1', 'infinite-notes-edges-v1', 'infinite-notes-item-links-v1',
@@ -36,7 +36,7 @@ function zipFiles(entries: { name: string; bytes: Uint8Array }[]): Blob {
     u32(v, 0, 0x04034b50); u16(v, 4, 20); u16(v, 6, 0x800)
     u32(v, 14, checksum); u32(v, 18, bytes.length); u32(v, 22, bytes.length)
     u16(v, 26, path.length); header.set(path, 30)
-    chunks.push(header, bytes.slice().buffer)
+    chunks.push(header, new Uint8Array(bytes))
     const directory = new Uint8Array(46 + path.length)
     const d = new DataView(directory.buffer)
     u32(d, 0, 0x02014b50); u16(d, 4, 20); u16(d, 6, 20); u16(d, 8, 0x800)
@@ -135,21 +135,42 @@ function validate(files: Map<string, Uint8Array>): { manifest: BackupManifest; i
   if (files.size !== images.length + 1) throw new Error('В ZIP присутствуют лишние файлы')
   return { manifest, images, preview: { notes: notes.length, edges: edges.length, itemLinks: itemLinks.length, images: images.length, date: manifest.createdAt } }
 }
+// Image files are immutable after save; reuse their exact original bytes between
+// autosaves. Invalidate after any image-store mutation, including import and clear.
+type ImageEntry = { name: string; bytes: Uint8Array; id: string; type: string }
+let cachedRevision = -1
+let cachedImages: Promise<ImageEntry[]> | undefined
+async function snapshotImages(): Promise<ImageEntry[]> {
+  const revision = getImageRevision()
+  if (!cachedImages || cachedRevision !== revision) {
+    cachedRevision = revision
+    cachedImages = (async () => {
+      const stored = await allStoredImages()
+      const result: ImageEntry[] = []
+      for (const { id, blob } of stored) {
+        if (!UUID.test(id)) continue
+        if (blob.size > 15 * 1024 * 1024) throw new Error('Изображение слишком велико для резервной копии')
+        result.push({ name: `images/${id}`, id, type: blob.type, bytes: new Uint8Array(await blob.arrayBuffer()) })
+      }
+      return result
+    })().catch(error => {
+      // A transient IndexedDB error must not poison subsequent exports.
+      if (cachedRevision === revision) cachedImages = undefined
+      throw error
+    })
+  }
+  return cachedImages
+}
 export async function exportBackup(): Promise<Blob> {
   const storage: Record<string, string | null> = {}
   for (const key of BACKUP_KEYS) storage[key] = localStorage.getItem(key)
-  const stored = await allStoredImages()
-  const entries: { name: string; bytes: Uint8Array }[] = []
-  const images: BackupManifest['images'] = []
-  for (const { id, blob } of stored) {
-    if (!UUID.test(id)) continue
-    if (blob.size > 15 * 1024 * 1024) throw new Error('Изображение слишком велико для резервной копии')
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    entries.push({ name: `images/${id}`, bytes })
-    images.push({ id, file: `images/${id}`, type: blob.type })
-  }
+  const originals = await snapshotImages()
+  const images: BackupManifest['images'] = originals.map(({ id, name, type }) => ({ id, file: name, type }))
   const manifest: BackupManifest = { format: 'infinite-notes-backup', version: 1, createdAt: new Date().toISOString(), storage, images }
-  entries.unshift({ name: 'manifest.json', bytes: encoder.encode(JSON.stringify(manifest, null, 2)) })
+  const entries: { name: string; bytes: Uint8Array }[] = [
+    { name: 'manifest.json', bytes: encoder.encode(JSON.stringify(manifest, null, 2)) },
+    ...originals.map(({ name, bytes }) => ({ name, bytes })),
+  ]
   return zipFiles(entries)
 }
 export async function inspectBackup(file: File) {

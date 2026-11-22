@@ -1754,7 +1754,7 @@ dependencies = [
 
 [[package]]
 name = "infinite-notes"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "rfd",
  "tauri",

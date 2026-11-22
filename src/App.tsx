@@ -17,6 +17,7 @@ import {
 
 import { version as appVersion } from '../package.json'
 import type { NoteNode } from './NoteCard'
+import { NoteColorPicker, isNoteColor } from './NoteColors'
 // Load canvas node rendering separately from the initial application shell.
 const NoteCard = lazy(() => import('./NoteCard').then(module => ({ default: module.NoteCard })))
 import '@xyflow/react/dist/style.css'
@@ -24,7 +25,7 @@ import './App.css'
 import { SmartEdge } from './SmartEdge'
 import { CardAnchoredEdge } from './CardAnchoredEdge'
 const RichTextEditor = lazy(() => import('./RichText').then(module => ({ default: module.RichTextEditor })))
-import { ImageGallery } from './ImageGallery'
+const ImageGallery = lazy(() => import('./ImageGallery').then(module => ({ default: module.ImageGallery })))
 import { saveImage, clearStoredImages, type GalleryImage } from './ImageStorage'
 import { exportBackup, inspectBackup, importBackup, downloadBackup, type BackupPreview, BACKUP_KEYS } from './Backup'
 import { ACTIVE_PROJECT_KEY, createProject, listProjects, getProject, putProject, removeProject, type ProjectSummary } from './ProjectStore'
@@ -335,6 +336,8 @@ function Workspace() {
   const [projectsReady, setProjectsReady] = useState(false)
   const projectOperationRef = useRef(false)
   const projectRevisionRef = useRef(0)
+  // Prevent the outgoing React canvas from writing into the incoming project.
+  const projectTransitionRef = useRef(false)
   const [projectBusy, setProjectBusy] = useState(false)
   const [projectError, setProjectError] = useState('')
   const projectInputRef = useRef<HTMLInputElement>(null)
@@ -343,6 +346,7 @@ function Workspace() {
   const [renameValue, setRenameValue] = useState('')
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const [createProjectName, setCreateProjectName] = useState('Новый проект')
+  const [pendingProjectImport, setPendingProjectImport] = useState<{ file: File; nativePath?: string; name: string; notes: number; images: number } | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -389,6 +393,8 @@ function Workspace() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editorFullscreen, setEditorFullscreen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
+  const [draftColor, setDraftColor] = useState<string | undefined>(undefined)
+  const [colorMenuId, setColorMenuId] = useState<string | null>(null)
   const [draftContent, setDraftContent] = useState('')
   const [draftHtml, setDraftHtml] = useState('')
   const [draftGallery, setDraftGallery] = useState<GalleryImage[]>([])
@@ -407,19 +413,68 @@ function Workspace() {
         typeof link.itemLabel === 'string') : []
     } catch { return [] }
   })
-  useEffect(() => { localStorage.setItem(ITEM_LINKS_KEY, JSON.stringify(itemLinks)) }, [itemLinks])
+  useEffect(() => { if (!projectTransitionRef.current) localStorage.setItem(ITEM_LINKS_KEY, JSON.stringify(itemLinks)) }, [itemLinks])
 
 
   const { setViewport, setCenter, getViewport, screenToFlowPosition } = useReactFlow()
+
+  // Keep the latest canvas in refs so a project export never races the
+  // debounced localStorage writers (350 ms). Refs are updated on every render.
+  const latestNodesRef = useRef(nodes)
+  const latestEdgesRef = useRef(edges)
+  const latestItemLinksRef = useRef(itemLinks)
+  latestNodesRef.current = nodes
+  latestEdgesRef.current = edges
+  latestItemLinksRef.current = itemLinks
+
+  const flushCanvasStorage = () => {
+    if (projectTransitionRef.current) return
+    const savedNodes = latestNodesRef.current.map((node) => ({
+      id: node.id, type: node.type, position: node.position, style: node.style,
+      data: {
+        title: node.data.title, color: node.data.color, content: node.data.content,
+        richHtml: node.data.richHtml, kind: node.data.kind, gallery: node.data.gallery,
+        collapsed: node.data.collapsed ?? false,
+        canvasImageId: node.data.canvasImageId,
+        canvasImageWidth: node.data.canvasImageWidth,
+      },
+    }))
+    // Never silently continue exporting stale data after a quota/storage error.
+    localStorage.setItem(NOTES_KEY, JSON.stringify(savedNodes))
+    localStorage.setItem(EDGES_KEY, JSON.stringify(latestEdgesRef.current))
+    localStorage.setItem(ITEM_LINKS_KEY, JSON.stringify(latestItemLinksRef.current))
+  }
+
+  // Browser/WebView shutdown may happen before a debounce fires.
+  useEffect(() => {
+    const flush = () => {
+      if (projectTransitionRef.current) return
+      try { flushCanvasStorage() }
+      catch (error) { console.error('Infinite Notes: сохранение перед закрытием не удалось', error) }
+    }
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  })
+
+  const exportCurrentBackup = async () => {
+    flushCanvasStorage()
+    return exportBackup()
+  }
 
   // Avoid synchronous JSON serialization / localStorage writes for every pointer move.
   // Changes are saved shortly after the latest node update, including drag end.
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      if (projectTransitionRef.current) return
       const savedNodes = nodes.map((node) => ({
         id: node.id, type: node.type, position: node.position, style: node.style,
         data: {
-          title: node.data.title, content: node.data.content, richHtml: node.data.richHtml,
+          title: node.data.title, color: node.data.color, content: node.data.content, richHtml: node.data.richHtml,
           kind: node.data.kind, gallery: node.data.gallery,
           collapsed: node.data.collapsed ?? false,
           canvasImageId: node.data.canvasImageId,
@@ -437,6 +492,7 @@ function Workspace() {
   // Сохраняем связи
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      if (projectTransitionRef.current) return
       try { localStorage.setItem(EDGES_KEY, JSON.stringify(edges)) }
       catch (error) { console.error('Infinite Notes: не удалось сохранить связи', error) }
     }, 350)
@@ -757,6 +813,7 @@ function Workspace() {
     useCallback((event, node) => {
       event.preventDefault()
       setSelectedNoteId(node.id)
+      setColorMenuId(null)
 
       setMenu({
         type: 'node',
@@ -765,6 +822,12 @@ function Workspace() {
         y: event.clientY,
       })
     }, [])
+
+  const applyNoteColor = (id: string, color: string | undefined) => {
+    rememberCanvas()
+    setNodes(current => current.map(node => node.id === id
+      ? { ...node, data: { ...node.data, color } } : node))
+  }
 
   // ПКМ по линии связи
   const onEdgeContextMenu: EdgeMouseHandler =
@@ -805,6 +868,7 @@ function Workspace() {
     if (!note || note.data.kind === 'canvasImage') return
 
     setDraftTitle(note.data.title)
+    setDraftColor(isNoteColor(note.data.color) ? note.data.color : undefined)
     setDraftContent(note.data.content)
     setDraftHtml(note.data.richHtml ?? '')
     setDraftGallery(note.data.gallery || [])
@@ -831,6 +895,7 @@ function Workspace() {
               data: {
                 ...node.data,
                 title: draftTitle.trim() || 'Без названия',
+                color: draftColor,
                 content: draftContent,
                 richHtml: draftHtml,
                 kind: draftKind,
@@ -852,6 +917,21 @@ function Workspace() {
     ])
     setEditingId(null)
   }
+
+  // Escape closes the note editor like Cancel; do not steal Escape from nested dialogs.
+  useEffect(() => {
+    if (editingId === null) return
+    const closeEditorOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+      if (event.target instanceof Element && event.target.closest('[role="dialog"]:not(.editor-window), [role="listbox"], [role="menu"]')) return
+      if (document.querySelector('.editor-window [data-state="open"][role="dialog"], .editor-window [role="listbox"], .editor-window [role="menu"]')) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setEditingId(null)
+    }
+    window.addEventListener('keydown', closeEditorOnEscape)
+    return () => window.removeEventListener('keydown', closeEditorOnEscape)
+  }, [editingId])
 
   const updateSelectedLine = (patch: Partial<LineSettings>) => {
     if (!lineEditorId) return
@@ -1238,13 +1318,13 @@ function Workspace() {
         let active = localStorage.getItem(ACTIVE_PROJECT_KEY)
         if (!existing.length) {
           // Migration: preserve the existing v0.1/v0.2 canvas as the first project.
-          const first = createProject(localStorage.getItem('infinite-notes-project-name') || 'Моё пространство', await exportBackup())
+          const first = createProject(localStorage.getItem('infinite-notes-project-name') || 'Моё пространство', await exportCurrentBackup())
           await putProject(first)
           active = first.id
           localStorage.setItem(ACTIVE_PROJECT_KEY, active)
         } else if (!active || !existing.some(project => project.id === active)) {
           // Never silently overwrite the old canvas with a different project.
-          const recovered = createProject('Восстановленное пространство', await exportBackup())
+          const recovered = createProject('Восстановленное пространство', await exportCurrentBackup())
           await putProject(recovered)
           active = recovered.id
           localStorage.setItem(ACTIVE_PROJECT_KEY, active)
@@ -1278,7 +1358,8 @@ function Workspace() {
     if (!id) return
     const existing = await getProject(id)
     if (!existing) throw new Error('Активный проект отсутствует в каталоге')
-    const blob = await exportBackup()
+    if (projectTransitionRef.current) return
+    const blob = await exportCurrentBackup()
     await putProject({ ...existing, name: projectName, updatedAt: new Date().toISOString(), blob })
     await refreshProjects()
   }
@@ -1301,6 +1382,7 @@ function Workspace() {
     // Validate the target before touching the current canvas.
     if (selected.blob) await inspectBackup(new File([selected.blob], `${selected.name}.inotes`))
     const previousId = localStorage.getItem(ACTIVE_PROJECT_KEY)
+    projectTransitionRef.current = true
     localStorage.setItem(ACTIVE_PROJECT_KEY, target.id)
     localStorage.setItem('infinite-notes-project-name', target.name)
     try {
@@ -1313,6 +1395,7 @@ function Workspace() {
     } catch (error) {
       if (previousId) localStorage.setItem(ACTIVE_PROJECT_KEY, previousId)
       localStorage.setItem('infinite-notes-project-name', projectName)
+      projectTransitionRef.current = false
       throw error
     }
   })
@@ -1324,9 +1407,13 @@ function Workspace() {
       await persistCurrentProject()
       const next = createProject(name)
       await putProject(next)
+      projectTransitionRef.current = true
       localStorage.setItem(ACTIVE_PROJECT_KEY, next.id)
       localStorage.setItem('infinite-notes-project-name', next.name)
       for (const key of BACKUP_KEYS) localStorage.removeItem(key)
+      localStorage.setItem(NOTES_KEY, '[]')
+      localStorage.setItem(EDGES_KEY, '[]')
+      localStorage.setItem(ITEM_LINKS_KEY, '[]')
       await clearStoredImages()
       window.location.reload()
     })
@@ -1342,7 +1429,7 @@ function Workspace() {
       if (!path) return // User cancelled; do not change the bound path.
     }
     await persistCurrentProject()
-    const blob = await exportBackup()
+    const blob = await exportCurrentBackup()
     if (bridge && path) {
       const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
       await bridge.core.invoke('write_inotes_file', { path, bytes })
@@ -1373,21 +1460,51 @@ function Workspace() {
       await openProjectFile(file, path)
     } catch (error) { setProjectError(error instanceof Error ? error.message : String(error)) }
   }
+  // Preview the archive before showing the themed confirmation dialog.
   const openProjectFile = async (file?: File, nativePath?: string) => {
-    if (!file) return
-    await withProjectOperation(async () => {
-      if (!/\.(inotes|zip)$/i.test(file.name)) throw new Error('Выберите файл .inotes или .zip')
+    if (!file || projectOperationRef.current || pendingProjectImport) return
+    if (!/\.(inotes|zip)$/i.test(file.name)) {
+      setProjectError('Выберите файл .inotes или .zip')
+      return
+    }
+    setProjectError('')
+    try {
       const info = await inspectBackup(file)
-      const name = file.name.replace(/\.(inotes|zip)$/i, '')
-      if (!window.confirm(`Добавить «${name}» в локальные проекты?\nЗаметок: ${info.notes}, изображений: ${info.images}.`)) return
+      setPendingProjectImport({
+        file, nativePath, name: file.name.replace(/\.(inotes|zip)$/i, ''),
+        notes: info.notes, images: info.images,
+      })
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const confirmProjectImport = async () => {
+    const pending = pendingProjectImport
+    if (!pending || projectOperationRef.current) return
+    await withProjectOperation(async () => {
+      const { file, nativePath, name } = pending
+      // Recheck the archive before replacing the active canvas.
+      await inspectBackup(file)
       await persistCurrentProject()
+      const previousId = localStorage.getItem(ACTIVE_PROJECT_KEY)
       const next = createProject(name, file)
       await putProject(next)
+      projectTransitionRef.current = true
       localStorage.setItem(ACTIVE_PROJECT_KEY, next.id)
       localStorage.setItem('infinite-notes-project-name', name)
-      await importBackup(file, true)
-      if (nativePath) rememberProjectFilePath(next.id, nativePath)
+      try {
+        // Store the native path before importBackup triggers a reload.
+        if (nativePath) rememberProjectFilePath(next.id, nativePath)
+        await importBackup(file, true)
+      } catch (error) {
+        if (previousId) localStorage.setItem(ACTIVE_PROJECT_KEY, previousId)
+        localStorage.setItem('infinite-notes-project-name', projectName)
+        projectTransitionRef.current = false
+        throw error
+      }
     })
+    setPendingProjectImport(null)
   }
   useEffect(() => {
     const onSaveKey = (event: KeyboardEvent) => {
@@ -1785,6 +1902,12 @@ function Workspace() {
                 ✎ Редактировать
               </button>}
 
+              {nodes.find(node => node.id === menu.id)?.data.kind !== 'canvasImage' && <>
+                <button onClick={() => setColorMenuId(current => current === menu.id ? null : menu.id)}>◉ Цвет заметки ▸</button>
+                {colorMenuId === menu.id && <NoteColorPicker
+                  theme={themeId} value={nodes.find(node => node.id === menu.id)?.data.color}
+                  onChange={color => applyNoteColor(menu.id, color)} />}
+              </>}
               <button onClick={startLinking}>
                 ↗ Создать связь
               </button>
@@ -1813,6 +1936,21 @@ function Workspace() {
       )}
 
       <input ref={projectInputRef} type="file" accept=".inotes,.zip,application/zip" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; void openProjectFile(file) }} />
+      {pendingProjectImport && <div className="inotes-project-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setPendingProjectImport(null) }}>
+        <section className="inotes-project-modal inotes-import-modal" role="dialog" aria-modal="true" aria-labelledby="inotes-import-title" onKeyDown={event => { if (event.key === 'Escape' && !projectBusy) { event.stopPropagation(); setPendingProjectImport(null) } }}>
+          <div className="inotes-import-icon" aria-hidden="true">▤</div>
+          <h2 id="inotes-import-title">Открыть проект?</h2>
+          <p className="inotes-import-description">Добавить этот файл в локальные проекты Infinite Notes и открыть его?</p>
+          <div className="inotes-import-file" title={pendingProjectImport.file.name}><strong>{pendingProjectImport.file.name}</strong><span>Архив .inotes / ZIP</span></div>
+          <div className="inotes-import-stats"><div><strong>{pendingProjectImport.notes}</strong><span>Заметок</span></div><div><strong>{pendingProjectImport.images}</strong><span>Изображений</span></div></div>
+          <p className="inotes-import-hint">Текущий проект будет сохранён перед переключением.</p>
+          {projectError && <p className="project-home-error" role="alert">{projectError}</p>}
+          <div className="inotes-project-modal-actions">
+            <button type="button" disabled={projectBusy} onClick={() => setPendingProjectImport(null)}>Отмена</button>
+            <button type="button" className="inotes-import-confirm" disabled={projectBusy} onClick={() => void confirmProjectImport()}>{projectBusy ? 'Открываем…' : 'Добавить и открыть'}</button>
+          </div>
+        </section>
+      </div>}
       {createProjectOpen && <div className="inotes-project-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !projectBusy) setCreateProjectOpen(false) }}>
         <form className="inotes-project-modal" role="dialog" aria-modal="true" aria-label="Создать проект" onSubmit={event => { event.preventDefault(); void newProject() }} onKeyDown={event => { if (event.key === 'Escape' && !projectBusy) { event.stopPropagation(); setCreateProjectOpen(false) } }}>
           <h2>＋ Новый проект</h2>
@@ -1932,7 +2070,7 @@ function Workspace() {
                   <p>Скачивается ZIP с заметками, связями пунктов, темой, настройками линий и изображениями из IndexedDB.</p>
                   <button type="button" className="backup-primary" disabled={backupBusy} onClick={async () => {
                     setBackupBusy(true); setBackupMessage('Подготавливаем резервную копию…')
-                    try { downloadBackup(await exportBackup()); setBackupMessage('Архив подготовлен. Проверьте папку загрузок.') }
+                    try { downloadBackup(await exportCurrentBackup()); setBackupMessage('Архив подготовлен. Проверьте папку загрузок.') }
                     catch (error) { setBackupMessage(`Ошибка экспорта: ${error instanceof Error ? error.message : String(error)}`) }
                     finally { setBackupBusy(false) }
                   }}>Скачать ZIP проекта</button>
@@ -2107,6 +2245,11 @@ function Workspace() {
               autoFocus
             />
 
+            <div className="inotes-editor-color"><details>
+              <summary><span className="inotes-current-color" style={{ backgroundColor: draftColor || 'var(--note-bg)' }} /> Цвет заметки {draftColor || '(цвет темы)'}</summary>
+              <NoteColorPicker theme={themeId} value={draftColor}
+                onChange={setDraftColor}/>
+            </details></div>
             <div className="editor-field-heading"><label htmlFor="note-content">Содержимое</label></div>
 
             {draftKind === 'gallery' ? <section className="gallery-editor">
@@ -2122,7 +2265,7 @@ function Workspace() {
                 }} />
               </label>
               {galleryError && <p className="image-error">{galleryError}</p>}
-              <ImageGallery images={draftGallery} onChange={setDraftGallery} />
+              <Suspense fallback={<div className="inotes-loading">Загрузка галереи…</div>}><ImageGallery images={draftGallery} onChange={setDraftGallery} /></Suspense>
             </section> : <Suspense fallback={<div className="rich-editor-loading">Загрузка редактора…</div>}><RichTextEditor
               key={editingId}
               targets={nodes.filter(node => node.id !== editingId).map(node => ({ id: node.id, title: node.data.title }))}

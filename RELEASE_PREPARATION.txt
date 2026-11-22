@@ -1,0 +1,22 @@
+INFINITE NOTES v0.3.0 — RELEASE PREPARATION
+
+Этот ZIP — патч исходников, НЕ готовый установщик.
+
+1. Сохраните полный бэкап текущего проекта.
+2. Распакуйте архив в B:\Programming\notees\InfiniteNotes\ с заменой файлов.
+3. npm.cmd ci
+4. npm.cmd run build
+5. npm.cmd run tauri:dev — проверьте справку, Ctrl+S, Undo/Redo, изображения и галереи.
+6. npm.cmd run tauri:installer
+7. npm.cmd run tauri:portable
+8. Проверьте NSIS и Portable на Windows, затем создайте тег v0.3.0 и GitHub Release.
+
+Git:
+  git status
+  git add src/App.tsx src/RichText.tsx package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml README.md RELEASE_NOTES_v0.3.0.md
+  git commit -m "Release v0.3.0: help, shortcuts and release notes"
+  git tag v0.3.0
+  git push origin main
+  git push origin v0.3.0
+
+ПРИМЕЧАНИЕ: проверьте текущую ветку (main или master) и существующие теги до команд push. Не публикуйте node_modules, dist, target, .env и локальные резервные копии.

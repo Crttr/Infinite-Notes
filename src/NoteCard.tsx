@@ -1,5 +1,6 @@
 
 import { useEffect } from 'react'
+import { isNoteColor } from './NoteColors'
 import { RichTextView } from './RichTextView'
 import { ImageGallery } from './ImageGallery'
 import { CanvasReference } from './CanvasReference'
@@ -15,6 +16,7 @@ import {
 
 export type NoteData = {
   title: string
+  color?: string
   content: string
   richHtml?: string
   gallery?: GalleryImage[]
@@ -69,6 +71,7 @@ export function NoteCard({
       onResizeEnd={(_, params) => data.onResizeNote?.(id, params.width, params.height)}
     />
     <div
+      style={isNoteColor(data.color) ? { backgroundColor: data.color, color: "#fff", borderColor: data.color, ["--note-header" as string]: data.color, ["--note-bg" as string]: data.color, ["--note-content" as string]: "#fff", ["--note-list-bg" as string]: data.color, ["--note-list-border" as string]: `color-mix(in srgb, ${data.color} 65%, white)` } : undefined}
       className={`note-card ${
         selected ? 'note-selected' : ''
       } ${data.kind === 'gallery' ? 'note-gallery' : ''} ${data.collapsed ? 'note-collapsed' : ''

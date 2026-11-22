@@ -1394,3 +1394,145 @@
 .inotes-delete-actions button:focus-visible { outline:2px solid #d6b2ef; outline-offset:3px; }
 .inotes-delete-actions .inotes-delete-danger { background:#9c394c; border-color:#b84b60; }
 .inotes-delete-actions button:disabled { opacity:.55; cursor:wait; }
+
+/* v0.5.0 alpha — note colors */
+.workspace .note-card[style] { background-color: var(--note-bg); color: #fff; border-color: var(--note-border); }
+.workspace .note-card[style] .note-title { background-color: var(--note-header); color: #fff; border-bottom-color: #ffffff35; }
+.workspace .note-card[style] .note-content { color: #fff; }
+.inotes-color-picker { display: grid; gap: 10px; padding: 10px; min-width: 235px; max-width: 320px; color: var(--text-main); background: var(--panel-bg, #302b35); border-radius: 10px; }
+.inotes-color-swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+.inotes-color-swatch { width: 31px; height: 31px; border-radius: 8px; border: 2px solid #ffffff70; padding: 0; cursor: pointer; }
+.inotes-color-swatch.active { outline: 2px solid var(--focus-color, #c48bdf); outline-offset: 2px; }
+.inotes-color-field { display: grid; gap: 5px; font-size: 12px; }
+.inotes-color-field span { display: flex; align-items: center; gap: 5px; }
+.inotes-color-field input:not([type=color]), .inotes-color-field select { min-width: 0; width: 100%; flex: 1; padding: 7px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--note-bg); color: var(--text-main); }
+.inotes-color-field input[type=color] { width: 34px; height: 32px; padding: 2px; cursor: pointer; }
+.inotes-color-field button, .inotes-color-reset { padding: 7px 9px; cursor: pointer; }
+.inotes-color-reset { width: 100%; }
+.inotes-editor-color { margin: 10px 0; }
+.inotes-editor-color summary { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px 0; }
+.inotes-current-color { display: inline-block; width: 23px; height: 23px; border-radius: 6px; border: 1px solid #ffffff70; }
+.inotes-editor-color .inotes-color-picker { margin: 8px 0; }
+.workspace .context-menu:has(.inotes-color-picker) { width: 290px; max-height: min(80vh, 660px); overflow-y: auto; }
+.workspace .context-menu .inotes-color-picker { min-width: 0; max-width: none; }
+.workspace .context-menu .inotes-color-swatch { width: 31px; height: 31px; padding: 0; flex: 0 0 31px; }
+.workspace .context-menu .inotes-color-field button { width: auto; flex: 0 0 auto; padding: 7px; }
+.workspace .context-menu .inotes-color-reset { padding: 7px; }
+
+/* v0.5.0 Alpha 2 — theme-consistent color picker controls */
+.workspace .inotes-color-picker {
+  box-sizing: border-box; width: 100%; min-width: 0;
+  background: var(--dialog-bg, var(--panel-bg, #302b35));
+  color: var(--text-main, #fff);
+  border: 1px solid var(--border-color, #765a82);
+  padding: 12px; border-radius: 12px;
+}
+.workspace .inotes-color-picker .inotes-color-field { color: var(--text-main, #fff); gap: 7px; }
+.workspace .inotes-color-picker input:not([type="color"]),
+.workspace .inotes-color-picker select {
+  box-sizing: border-box; min-width: 0; max-width: 100%;
+  background: var(--field-bg, #322638); color: var(--text-main, #fff);
+  border: 1px solid var(--border-color, #765a82); border-radius: 8px;
+  padding: 9px 10px; font: inherit; color-scheme: dark;
+}
+.workspace[data-theme="light"] .inotes-color-picker input:not([type="color"]),
+.workspace[data-theme="light"] .inotes-color-picker select { color-scheme: light; }
+.workspace .inotes-color-picker select option { background: var(--dialog-bg, #302638); color: var(--text-main, #fff); }
+.workspace .inotes-color-picker button:not(.inotes-color-swatch),
+.workspace .context-menu .inotes-color-picker button:not(.inotes-color-swatch) {
+  width: auto; min-width: 42px; flex: 0 0 auto;
+  background: var(--control-bg, #49374f); color: var(--text-main, #fff);
+  border: 1px solid var(--border-color, #765a82); border-radius: 8px;
+  padding: 9px 11px; font: inherit; cursor: pointer;
+}
+.workspace .inotes-color-picker button:not(.inotes-color-swatch):hover:not(:disabled) {
+  background: var(--control-hover, #65466e); border-color: var(--accent, #c48bdf);
+}
+.workspace .inotes-color-picker button:disabled { opacity: .48; cursor: not-allowed; }
+.workspace .inotes-color-picker .inotes-color-reset,
+.workspace .context-menu .inotes-color-picker .inotes-color-reset { width: 100%; flex: 1 1 100%; }
+.workspace .inotes-color-picker input[type="color"] {
+  box-sizing: border-box; flex: 0 0 36px; width: 36px; height: 36px;
+  border: 1px solid var(--border-color, #765a82);
+  border-radius: 9px; background: var(--field-bg, #322638);
+  padding: 3px; cursor: pointer;
+}
+.workspace .inotes-color-picker input:focus-visible,
+.workspace .inotes-color-picker select:focus-visible,
+.workspace .inotes-color-picker button:focus-visible {
+  outline: 2px solid var(--accent, #c48bdf); outline-offset: 2px;
+}
+/* List surfaces and nested lists inherit the individual note color. */
+.workspace .note-card[style] .rich-text-view li {
+  background: var(--note-list-bg, transparent);
+  color: var(--note-content, #fff);
+  border-color: var(--note-list-border, #ffffff33);
+  border-radius: 7px;
+}
+.workspace .note-card[style] .rich-text-view li > p,
+.workspace .note-card[style] .rich-text-view li > span { color: inherit; }
+.workspace .note-card[style] .rich-text-view li::marker { color: var(--note-content, #fff); }
+.workspace .note-card[style] .rich-text-view li [data-note-id] { color: #f3d8ff; }
+
+/* Alpha 2 follow-up: keep list markers and their surfaces aligned in colored notes. */
+.workspace .note-card[style] .rich-text-view ol,
+.workspace .note-card[style] .rich-text-view ul {
+  padding-left: 0;
+  margin: 8px 0;
+  list-style-position: inside;
+}
+.workspace .note-card[style] .rich-text-view li {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  margin: 5px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace .note-card[style] .rich-text-view li > p {
+  display: inline;
+  margin: 0;
+}
+.workspace .note-card[style] .rich-text-view li > ul,
+.workspace .note-card[style] .rich-text-view li > ol {
+  margin: 6px 0 0 12px;
+}
+/* Inline link cards in lists should wrap without being clipped by a narrow note. */
+.workspace .note-card[style] .rich-text-view li [data-note-id][data-link-style="card"] {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+  padding: .3em .65em;
+  margin: 2px 0;
+}
+
+/* Alpha 2 fix: colored notes should color the actual link-card as well,
+   rather than darkening the list row while leaving a purple link behind. */
+.workspace .note-card[style] .rich-text-view li {
+  background: var(--note-bg) !important;
+}
+.workspace .note-card[style] .rich-text-view [data-note-id][data-link-style="card"] {
+  background: var(--note-bg) !important;
+  color: var(--note-content, #fff) !important;
+  border-color: var(--note-list-border, #ffffff66) !important;
+}
+.workspace .note-card[style] .rich-text-view [data-note-id][data-link-style="card"]:hover {
+  background: color-mix(in srgb, var(--note-bg) 88%, white) !important;
+  border-color: var(--note-content, #fff) !important;
+}
+
+/* v0.5.0: themed confirmation for importing an .inotes project. */
+.inotes-import-modal { width:min(470px,100%); gap:12px; }
+.inotes-import-icon { display:grid; place-items:center; width:52px; height:52px; border:1px solid var(--border-color); border-radius:15px; background:var(--control-bg); color:var(--accent); font-size:28px; }
+.inotes-import-description, .inotes-import-hint { margin:0; color:var(--text-muted); line-height:1.5; font-size:14px; }
+.inotes-import-file { min-width:0; display:grid; gap:5px; padding:14px; background:var(--control-bg); border:1px solid var(--border-color); border-radius:12px; }
+.inotes-import-file strong { overflow-wrap:anywhere; font-size:15px; }
+.inotes-import-file span { color:var(--text-muted); font-size:12px; }
+.inotes-import-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.inotes-import-stats > div { display:grid; gap:5px; padding:13px; border:1px solid var(--border-color); border-radius:11px; }
+.inotes-import-stats strong { font-size:23px; color:var(--text-main); }
+.inotes-import-stats span { font-size:12px; color:var(--text-muted); }
+.inotes-import-modal .inotes-import-confirm { background:var(--accent,#75518b); color:#fff; border-color:transparent; }
+.inotes-import-modal .inotes-project-modal-actions { flex-wrap:wrap; }

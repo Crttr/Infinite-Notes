@@ -63,8 +63,8 @@ export async function putProject(project: LocalProject): Promise<void> {
     tx.objectStore(STORE).put(project)
     tx.objectStore(INDEX).put(summary(project))
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(tx.error)
+    tx.onerror = () => reject(tx.error ?? new Error('Ошибка записи проекта'))
+    tx.onabort = () => reject(tx.error ?? new Error('Запись проекта отменена'))
   })
 }
 export async function removeProject(id: string): Promise<void> {
@@ -74,8 +74,8 @@ export async function removeProject(id: string): Promise<void> {
     tx.objectStore(STORE).delete(id)
     tx.objectStore(INDEX).delete(id)
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(tx.error)
+    tx.onerror = () => reject(tx.error ?? new Error('Ошибка записи проекта'))
+    tx.onabort = () => reject(tx.error ?? new Error('Запись проекта отменена'))
   })
 }
 export function createProject(name: string, blob: Blob | null = null): LocalProject {

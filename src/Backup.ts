@@ -69,7 +69,7 @@ function readZip(buffer: ArrayBuffer): Map<string, Uint8Array> {
   let pos = start
   let total = 0
   for (let i = 0; i < count; i++) {
-    if (pos + 46 > end || view.getUint32(pos, true) !== 0x02014b50) throw new Error('Повреждён каталог ZIP')
+    if (pos + 46 > start + size || view.getUint32(pos, true) !== 0x02014b50) throw new Error('Повреждён каталог ZIP')
     const method = view.getUint16(pos + 10, true)
     const flags = view.getUint16(pos + 8, true)
     const crc = view.getUint32(pos + 16, true)
@@ -79,12 +79,21 @@ function readZip(buffer: ArrayBuffer): Map<string, Uint8Array> {
     const extra = view.getUint16(pos + 30, true)
     const comment = view.getUint16(pos + 32, true)
     const localOffset = view.getUint32(pos + 42, true)
-    if (pos + 46 + nameLength + extra + comment > end || flags & 1 || method !== 0 || compressed !== uncompressed) throw new Error('Неподдерживаемый формат ZIP')
+    if (pos + 46 + nameLength + extra + comment > start + size || flags & 1 || method !== 0 || compressed !== uncompressed) throw new Error('Неподдерживаемый формат ZIP')
     const name = decoder.decode(data.subarray(pos + 46, pos + 46 + nameLength))
     if (result.has(name) || name.includes('..') || name.startsWith('/') || name.includes('\\')) throw new Error('Недопустимый путь внутри ZIP')
     if (localOffset + 30 > data.length || view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('Повреждён файл ZIP')
-    const body = localOffset + 30 + view.getUint16(localOffset + 26, true) + view.getUint16(localOffset + 28, true)
-    if (body + compressed > data.length) throw new Error('Повреждён файл ZIP')
+    const localFlags = view.getUint16(localOffset + 6, true)
+    const localMethod = view.getUint16(localOffset + 8, true)
+    const localNameLength = view.getUint16(localOffset + 26, true)
+    const localExtraLength = view.getUint16(localOffset + 28, true)
+    const localNameStart = localOffset + 30
+    const body = localNameStart + localNameLength + localExtraLength
+    if (body > start || body + compressed > start) throw new Error('Некорректное расположение данных ZIP')
+    if (localFlags !== flags || localMethod !== method) throw new Error('Заголовки ZIP не совпадают')
+    const localName = decoder.decode(data.subarray(localNameStart, localNameStart + localNameLength))
+    if (localName !== name) throw new Error('Имена файлов ZIP не совпадают')
+    if (!(flags & 0x08) && (view.getUint32(localOffset + 14, true) !== crc || view.getUint32(localOffset + 18, true) !== compressed || view.getUint32(localOffset + 22, true) !== uncompressed)) throw new Error('Размер или контрольная сумма ZIP не совпадают')
     const bytes = data.slice(body, body + compressed)
     if (crc32(bytes) !== crc) throw new Error(`Ошибка контрольной суммы: ${name}`)
     result.set(name, bytes)
@@ -171,6 +180,8 @@ export async function exportBackup(): Promise<Blob> {
     { name: 'manifest.json', bytes: encoder.encode(JSON.stringify(manifest, null, 2)) },
     ...originals.map(({ name, bytes }) => ({ name, bytes })),
   ]
+  const totalBytes = entries.reduce((sum, entry) => sum + entry.bytes.byteLength, 0)
+  if (totalBytes > LIMIT) throw new Error('Резервная копия превышает 512 МБ')
   return zipFiles(entries)
 }
 export async function inspectBackup(file: File) {
